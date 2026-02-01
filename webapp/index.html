@@ -7,15 +7,24 @@
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background: #f0f2f5; }
         .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }
-        button { background: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-size: 16px; width: 100%; transition: background 0.2s; }
+        button { background: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-size: 16px; width: 100%; transition: background 0.2s; margin-top: 10px; }
         button:hover { background: #0056b3; }
         button:disabled { background: #ccc; cursor: not-allowed; }
-        input { padding: 10px; border: 1px solid #ddd; border-radius: 6px; width: 60px; text-align: center; font-size: 18px; }
-        .row { display: flex; align-items: center; justify-content: space-between; margin: 15px 0; }
+        button.secondary { background: #6c757d; font-size: 14px; padding: 5px 10px; width: auto; }
+        button.danger { background: #dc3545; width: auto; padding: 5px 10px; font-size: 12px; margin: 0; }
+        
+        input, select { padding: 8px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; }
+        .row { display: flex; align-items: center; justify-content: space-between; margin: 10px 0; }
         .status { padding: 10px; margin-bottom: 15px; border-radius: 6px; display: none; }
         .status.error { background: #fee; color: #c00; display: block; }
         .status.success { background: #efe; color: #0c0; display: block; }
-        label { font-weight: bold; }
+        
+        .mode-selector { display: flex; gap: 20px; margin-bottom: 20px; }
+        .mode-opt { cursor: pointer; display: flex; align-items: center; gap: 5px; font-weight: bold; }
+        
+        .list-container { background: #f8f9fa; padding: 10px; border-radius: 6px; margin-bottom: 15px; border: 1px solid #e9ecef; }
+        .list-item { display: flex; justify-content: space-between; align-items: center; background: white; padding: 8px; margin-bottom: 5px; border-radius: 4px; border: 1px solid #dee2e6; }
+        .step-adder { display: flex; gap: 10px; align-items: center; background: #eee; padding: 10px; border-radius: 6px; }
     </style>
 </head>
 <body>
@@ -25,77 +34,249 @@
 
     <div class="card">
         <h3>1. Connect</h3>
-        <p>Ensure your FootSwitch is powered on.</p>
         <button id="btnConnect">Connect to Device</button>
     </div>
 
     <div class="card" id="configPanel" style="opacity: 0.5; pointer-events: none;">
-        <h3>2. Configure Keys</h3>
+        <h3>2. Configure</h3>
         
-        <div class="row">
-            <label>Press Action:</label>
-            <div style="display:flex; gap:5px;">
-                <select id="pressMod">
-                    <option value="0">None</option>
-                    <option value="128">Ctrl</option>
-                    <option value="129">Shift</option>
-                    <option value="130">Alt</option>
-                    <option value="131">Win</option>
-                </select>
-                <input type="text" id="pressChar" maxlength="1" placeholder="k" style="width:40px;">
-            </div>
-            <span style="font-size:12px; color:#666;">(Code: <span id="pressCode">107</span>)</span>
+        <div class="mode-selector">
+            <label class="mode-opt"><input type="radio" name="mode" value="0" checked> Momentary (Combo)</label>
+            <label class="mode-opt"><input type="radio" name="mode" value="1"> Macro (Sequence)</label>
         </div>
 
-        <div class="row">
-            <label>Release Action:</label>
-            <div style="display:flex; gap:5px;">
-                <select id="releaseMod">
-                    <option value="0">None</option>
-                    <option value="128">Ctrl</option>
-                    <option value="129">Shift</option>
-                    <option value="130">Alt</option>
-                    <option value="131">Win</option>
-                </select>
-                <input type="text" id="releaseChar" maxlength="1" placeholder="m" style="width:40px;">
+        <!-- MODE 0 UI -->
+        <div id="uiMode0">
+            <p><strong>Behavior:</strong> Hold keys while pressed.</p>
+            <div class="list-container" id="listMomentary">
+                <!-- Keys go here -->
+                <div style="color:#666; font-style:italic; text-align:center; padding:10px;">No keys added</div>
             </div>
-            <span style="font-size:12px; color:#666;">(Code: <span id="releaseCode">109</span>)</span>
+            
+            <div class="step-adder">
+                <select id="m0_type">
+                    <option value="char">Character</option>
+                    <option value="mod">Modifier</option>
+                </select>
+                <div id="m0_input_char">
+                    <input type="text" id="m0_char" maxlength="1" placeholder="k" style="width:50px;">
+                </div>
+                <div id="m0_input_mod" style="display:none;">
+                    <select id="m0_mod">
+                        <option value="128">Ctrl</option>
+                        <option value="129">Shift</option>
+                        <option value="130">Alt</option>
+                        <option value="131">Win</option>
+                    </select>
+                </div>
+                <button class="secondary" id="btnAddKey">Add Key</button>
+            </div>
+        </div>
+
+        <!-- MODE 1 UI -->
+        <div id="uiMode1" style="display:none;">
+            <p><strong>Behavior:</strong> Run A on press, B on release.</p>
+            
+            <h4>Sequence A (Press)</h4>
+            <div class="list-container" id="listMacroPress"></div>
+            
+            <h4>Sequence B (Release)</h4>
+            <div class="list-container" id="listMacroRelease"></div>
+
+            <hr>
+            <h4>Add Step</h4>
+            <div class="step-adder">
+                <label>Add to: </label>
+                <select id="m1_target">
+                    <option value="press">Press Seq</option>
+                    <option value="release">Release Seq</option>
+                </select>
+                
+                <select id="m1_type">
+                    <option value="1">Tap Key</option>
+                    <option value="2">Delay</option>
+                </select>
+                
+                <!-- Type: Key -->
+                <span class="m1-val-key">
+                    <select id="m1_key_type">
+                        <option value="char">Char</option>
+                        <option value="mod">Mod</option>
+                    </select>
+                    <input type="text" id="m1_char" maxlength="1" placeholder="k" style="width:30px;">
+                    <select id="m1_mod" style="display:none; width:60px;">
+                        <option value="128">Ctrl</option>
+                        <option value="129">Shift</option>
+                        <option value="130">Alt</option>
+                        <option value="131">Win</option>
+                    </select>
+                </span>
+
+                <!-- Type: Delay -->
+                <span class="m1-val-delay" style="display:none;">
+                    <input type="number" id="m1_ms" placeholder="ms" value="100" style="width:60px;"> ms
+                </span>
+
+                <button class="secondary" id="btnAddStep">Add Step</button>
+            </div>
         </div>
 
         <button id="btnSave">Save Configuration</button>
     </div>
 
     <script>
+        // --- Constants & Globals ---
         const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
         const CHAR_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
-
         let device, characteristic;
 
-        const btnConnect = document.getElementById('btnConnect');
-        const btnSave = document.getElementById('btnSave');
-        const configPanel = document.getElementById('configPanel');
-        const statusDiv = document.getElementById('status');
+        // State
+        let config = {
+            mode: 0,
+            momentaryKeys: [], // Array of integers
+            macroPress: [],    // Array of {action:1|2, val:int}
+            macroRelease: []   // Array of {action:1|2, val:int}
+        };
+
+        // --- DOM Elements ---
+        const uiMode0 = document.getElementById('uiMode0');
+        const uiMode1 = document.getElementById('uiMode1');
+        const radios = document.getElementsByName('mode');
         
-        const pressInput = document.getElementById('pressChar');
-        const releaseInput = document.getElementById('releaseChar');
-        const pressMod = document.getElementById('pressMod');
-        const releaseMod = document.getElementById('releaseMod');
-        
-        // Helper to update code display
-        function updateCodes() {
-            document.getElementById('pressCode').textContent = pressInput.value.charCodeAt(0) || 0;
-            document.getElementById('releaseCode').textContent = releaseInput.value.charCodeAt(0) || 0;
+        // --- UI Logic ---
+
+        // Toggle Mode
+        radios.forEach(r => r.addEventListener('change', (e) => {
+            config.mode = parseInt(e.target.value);
+            refreshUI();
+        }));
+
+        function refreshUI() {
+            uiMode0.style.display = config.mode === 0 ? 'block' : 'none';
+            uiMode1.style.display = config.mode === 1 ? 'block' : 'none';
+            renderLists();
         }
-        pressInput.addEventListener('input', updateCodes);
-        releaseInput.addEventListener('input', updateCodes);
+
+        function getKeyName(code) {
+            if(code === 128) return "Ctrl";
+            if(code === 129) return "Shift";
+            if(code === 130) return "Alt";
+            if(code === 131) return "Win";
+            return "Key: " + String.fromCharCode(code);
+        }
+
+        function renderLists() {
+            // Momentary
+            const listM = document.getElementById('listMomentary');
+            listM.innerHTML = config.momentaryKeys.length ? '' : '<div style="color:#666; font-style:italic; text-align:center;">No keys added</div>';
+            config.momentaryKeys.forEach((code, idx) => {
+                const div = document.createElement('div');
+                div.className = 'list-item';
+                div.innerHTML = `<span>⚡ ${getKeyName(code)}</span> <button class="danger" onclick="removeMomentary(${idx})">×</button>`;
+                listM.appendChild(div);
+            });
+
+            // Macros
+            const renderMacro = (list, containerId, targetName) => {
+                const el = document.getElementById(containerId);
+                el.innerHTML = list.length ? '' : '<div style="color:#666; font-style:italic; text-align:center;">Empty Sequence</div>';
+                list.forEach((step, idx) => {
+                    const div = document.createElement('div');
+                    div.className = 'list-item';
+                    let desc = step.action == 1 ? `Typing ${getKeyName(step.val)}` : `Wait ${step.val}ms`;
+                    let icon = step.action == 1 ? '⌨️' : '⏱️';
+                    div.innerHTML = `<span>${icon} ${desc}</span> <button class="danger" onclick="removeMacro('${targetName}', ${idx})">×</button>`;
+                    el.appendChild(div);
+                });
+            };
+            
+            renderMacro(config.macroPress, 'listMacroPress', 'press');
+            renderMacro(config.macroRelease, 'listMacroRelease', 'release');
+        }
+
+        // Global removers
+        window.removeMomentary = (idx) => {
+            config.momentaryKeys.splice(idx, 1);
+            renderLists();
+        };
+        window.removeMacro = (target, idx) => {
+            if(target === 'press') config.macroPress.splice(idx, 1);
+            else config.macroRelease.splice(idx, 1);
+            renderLists();
+        };
+
+        // Input Toggles
+        document.getElementById('m0_type').addEventListener('change', (e) => {
+            document.getElementById('m0_input_char').style.display = e.target.value === 'char' ? 'block' : 'none';
+            document.getElementById('m0_input_mod').style.display = e.target.value === 'mod' ? 'block' : 'none';
+        });
+
+        document.getElementById('m1_type').addEventListener('change', (e) => {
+            const isDelay = e.target.value == '2';
+            document.querySelector('.m1-val-key').style.display = isDelay ? 'none' : 'inline-block';
+            document.querySelector('.m1-val-delay').style.display = isDelay ? 'inline-block' : 'none';
+        });
+
+        document.getElementById('m1_key_type').addEventListener('change', (e) => {
+             const isMod = e.target.value === 'mod';
+             document.getElementById('m1_mod').style.display = isMod ? 'inline-block' : 'none';
+             document.getElementById('m1_char').style.display = isMod ? 'none' : 'inline-block';
+        });
+
+
+        // --- Add Logic ---
+
+        document.getElementById('btnAddKey').addEventListener('click', () => {
+             const type = document.getElementById('m0_type').value;
+             let val = 0;
+             if(type === 'mod') {
+                 val = parseInt(document.getElementById('m0_mod').value);
+             } else {
+                 const char = document.getElementById('m0_char').value;
+                 if(!char) return;
+                 val = char.charCodeAt(0);
+                 document.getElementById('m0_char').value = '';
+             }
+             config.momentaryKeys.push(val);
+             renderLists();
+        });
+
+        document.getElementById('btnAddStep').addEventListener('click', () => {
+            const target = document.getElementById('m1_target').value;
+            const type = parseInt(document.getElementById('m1_type').value);
+            let val = 0;
+
+            if(type === 2) { // Delay
+                val = parseInt(document.getElementById('m1_ms').value) || 0;
+            } else { // Key
+                const keyType = document.getElementById('m1_key_type').value;
+                if(keyType === 'mod') {
+                    val = parseInt(document.getElementById('m1_mod').value);
+                } else {
+                    const char = document.getElementById('m1_char').value;
+                    if(!char) return;
+                    val = char.charCodeAt(0);
+                    document.getElementById('m1_char').value = '';
+                }
+            }
+
+            const step = { action: type, val: val };
+            if (target === 'press') config.macroPress.push(step);
+            else config.macroRelease.push(step);
+            renderLists();
+        });
+
+
+        // --- Bluetooth Logic ---
 
         function showStatus(msg, type) {
-            statusDiv.textContent = msg;
-            statusDiv.className = 'status ' + type;
-            setTimeout(() => { if(type === 'success') statusDiv.style.display = 'none'; }, 3000);
+            const s = document.getElementById('status');
+            s.textContent = msg;
+            s.className = 'status ' + type;
+            if(type === 'success') setTimeout(() => { s.style.display = 'none'; }, 3000);
         }
 
-        btnConnect.addEventListener('click', async () => {
+        document.getElementById('btnConnect').addEventListener('click', async () => {
             try {
                 showStatus('Searching...', 'success');
                 device = await navigator.bluetooth.requestDevice({
@@ -108,75 +289,93 @@
                 characteristic = await service.getCharacteristic(CHAR_UUID);
 
                 // Enable Panel
-                configPanel.style.opacity = "1";
-                configPanel.style.pointerEvents = "all";
-                btnConnect.textContent = "Connected";
-                btnConnect.disabled = true;
+                document.getElementById('configPanel').style.opacity = "1";
+                document.getElementById('configPanel').style.pointerEvents = "all";
+                document.getElementById('btnConnect').textContent = "Connected";
+                document.getElementById('btnConnect').disabled = true;
 
-                // Read current value
-                const value = await characteristic.readValue();
-                const decoder = new TextDecoder('utf-8');
-                const str = decoder.decode(value);
-                console.log("Read:", str);
+                // Parse Existing Config
+                const val = await characteristic.readValue();
+                const str = new TextDecoder().decode(val);
+                parseReadString(str);
                 
-                // Parse "107,128,109,0" (Key,Mod,Key,Mod)
-                const parts = str.split(',');
-                if(parts.length >= 4) {
-                    const p = parseInt(parts[0]);
-                    const pM = parseInt(parts[1]);
-                    const r = parseInt(parts[2]);
-                    const rM = parseInt(parts[3]);
-                    
-                    pressInput.value = String.fromCharCode(p);
-                    pressMod.value = pM;
-                    
-                    releaseInput.value = String.fromCharCode(r);
-                    releaseMod.value = rM;
-                    
-                    updateCodes();
-                } else if(parts.length === 2) {
-                     // Backward compatibility for old format
-                    const p = parseInt(parts[0]);
-                    const r = parseInt(parts[1]);
-                    pressInput.value = String.fromCharCode(p);
-                    pressMod.value = 0;
-                    releaseInput.value = String.fromCharCode(r);
-                    releaseMod.value = 0;
-                    updateCodes();
-                }
-
-                showStatus('Connected! Ready to config.', 'success');
-
-            } catch (error) {
-                console.error(error);
-                showStatus('Connection Failed: ' + error.message, 'error');
+                showStatus('Connected!', 'success');
+            } catch (err) {
+                console.error(err);
+                showStatus('Connection Failed: ' + err.message, 'error');
             }
         });
 
-        btnSave.addEventListener('click', async () => {
-            if (!characteristic) return;
-
-            const pCode = pressInput.value.charCodeAt(0) || 0;
-            const pMod = pressMod.value;
-            const rCode = releaseInput.value.charCodeAt(0) || 0;
-            const rMod = releaseMod.value;
-
-            if (!pCode || !rCode) {
-                showStatus('Please enter valid characters', 'error');
-                return;
-            }
-
-            // Send format: Key,Mod,Key,Mod
-            const data = `${pCode},${pMod},${rCode},${rMod}`;
-            const encoder = new TextEncoder();
+        function parseReadString(str) {
+            // Format: MODE#P1#P2
+            console.log("Read Config:", str);
+            const parts = str.split('#');
             
+            if(parts.length >= 3) {
+                config.mode = parseInt(parts[0]);
+                
+                // Parse Payload 1
+                const p1 = parts[1];
+                if(config.mode == 0) {
+                    config.momentaryKeys = p1 ? p1.split(',').map(Number) : [];
+                } else {
+                    // Macro
+                    config.macroPress = parseMacroString(p1);
+                }
+                
+                // Parse Payload 2
+                const p2 = parts[2];
+                if(config.mode == 1) {
+                    config.macroRelease = parseMacroString(p2);
+                }
+                
+                // Set Radio
+                radios.forEach(r => {
+                    if(parseInt(r.value) === config.mode) r.checked = true;
+                });
+                
+                refreshUI();
+            } else {
+                console.log("Unknown format, starting fresh.");
+            }
+        }
+
+        function parseMacroString(str) {
+            if(!str) return [];
+            const arr = str.split(',').map(Number);
+            const res = [];
+            for(let i=0; i<arr.length; i+=2) {
+                res.push({ action: arr[i], val: arr[i+1] });
+            }
+            return res;
+        }
+
+        document.getElementById('btnSave').addEventListener('click', async () => {
+            if(!characteristic) return;
+            
+            let p1 = "", p2 = "";
+
+            if (config.mode === 0) {
+                p1 = config.momentaryKeys.join(',');
+                p2 = "";
+            } else {
+                // Macro to String
+                const stepsToStr = (steps) => steps.map(s => `${s.action},${s.val}`).join(',');
+                p1 = stepsToStr(config.macroPress);
+                p2 = stepsToStr(config.macroRelease);
+            }
+
+            const data = `${config.mode}#${p1}#${p2}`;
+            console.log("Sending:", data);
+
             try {
-                await characteristic.writeValue(encoder.encode(data));
-                showStatus('Configuration Saved to Device!', 'success');
-            } catch (error) {
-                showStatus('Save Failed: ' + error.message, 'error');
+                 await characteristic.writeValue(new TextEncoder().encode(data));
+                 showStatus('Saved!', 'success');
+            } catch (err) {
+                showStatus('Save Failed: ' + err.message, 'error');
             }
         });
+
     </script>
 </body>
 </html>

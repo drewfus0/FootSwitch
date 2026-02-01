@@ -17,49 +17,73 @@ private:
   BLECharacteristic* configCharacteristic;
   Preferences preferences;
 
-  // Key Codes and Modifiers
-  // Modifiers: 0=None, 128=Ctrl, 129=Shift, 130=Alt, 131=Gui (Win/Cmd)
-  uint8_t pressCode = 'k';
-  uint8_t pressMod = 0;
-  
-  uint8_t releaseCode = 'm';
-  uint8_t releaseMod = 0;
+  // New State Variables
+  uint8_t mode = 0; // 0 = Momentary/Combo, 1 = Macro
+  String payload1 = ""; // Combo Keys (Mode 0) or Press Sequence (Mode 1)
+  String payload2 = ""; // Unused (Mode 0) or Release Sequence (Mode 1)
 
-  // Helper to parse "key,mod,key,mod" (e.g. "99,128,109,0")
+  // Helper to run a macro sequence
+  // Strings format: "Actions,Value,Action,Value..."
+  // Actions: 1=TAP, 2=DELAY
+  void runSequence(String seq) {
+    if (seq.length() == 0) return;
+    
+    int start = 0;
+    while(start < seq.length()) {
+        // Parse Action
+        int comma1 = seq.indexOf(',', start);
+        if(comma1 == -1) break; // Invalid format
+        int action = seq.substring(start, comma1).toInt();
+        
+        // Parse Value
+        int comma2 = seq.indexOf(',', comma1 + 1);
+        if(comma2 == -1) comma2 = seq.length();
+        int val = seq.substring(comma1 + 1, comma2).toInt();
+        
+        // Execute
+        if (action == 1) { // TAP
+            // write() sends a press and release
+            write(val);
+        } else if (action == 2) { // DELAY
+            delay(val);
+        }
+        
+        start = comma2 + 1;
+    }
+  }
+
+  // Parse "MODE#PAYLOAD1#PAYLOAD2"
   void parseAndSave(std::string value) {
     String data = String(value.c_str());
     
-    // Simple parser for 4 comma-separated values
-    int first = data.indexOf(',');
-    int second = data.indexOf(',', first + 1);
-    int third = data.indexOf(',', second + 1);
+    int firstHash = data.indexOf('#');
+    int secondHash = data.indexOf('#', firstHash + 1);
 
-    if (first > 0 && second > 0 && third > 0) {
-      uint8_t pKey = data.substring(0, first).toInt();
-      uint8_t pMod = data.substring(first + 1, second).toInt();
-      uint8_t rKey = data.substring(second + 1, third).toInt();
-      uint8_t rMod = data.substring(third + 1).toInt();
-
-      if (pKey > 0 && rKey > 0) {
-        pressCode = pKey;
-        pressMod = pMod;
-        releaseCode = rKey;
-        releaseMod = rMod;
-        
-        // Save to NVS
-        preferences.begin("footswitch", false);
-        preferences.putUChar("press", pressCode);
-        preferences.putUChar("pressMod", pressMod);
-        preferences.putUChar("release", releaseCode);
-        preferences.putUChar("releaseMod", releaseMod);
-        preferences.end();
-        
-        Serial.printf("Config Saved! Press: %d (Mod %d), Release: %d (Mod %d)\n", pressCode, pressMod, releaseCode, releaseMod);
-        
-        // Notify client
-        configCharacteristic->setValue(value);
-        configCharacteristic->notify();
+    // Basic validity check
+    if (firstHash > 0) {
+      mode = data.substring(0, firstHash).toInt();
+      
+      if (secondHash > 0) {
+          payload1 = data.substring(firstHash + 1, secondHash);
+          payload2 = data.substring(secondHash + 1);
+      } else {
+          // Fallback if second hash missing
+          payload1 = data.substring(firstHash + 1);
+          payload2 = "";
       }
+
+      // Save to NVS
+      preferences.begin("footswitch", false);
+      preferences.putUChar("mode", mode);
+      preferences.putString("pl1", payload1);
+      preferences.putString("pl2", payload2);
+      preferences.end();
+      
+      Serial.printf("Config Saved! Mode: %d\nPL1: %s\nPL2: %s\n", mode, payload1.c_str(), payload2.c_str());
+      
+      // Notify client
+      configCharacteristic->setValue(value);
+      configCharacteristic->notify();
     }
   }
 
@@ -78,23 +102,41 @@ public:
   ConfigKeyboard(std::string name = "FootSwitch", std::string manufacturer = "DIY", uint8_t batteryLevel = 100) 
     : BleKeyboard(name, manufacturer, batteryLevel) {
       preferences.begin("footswitch", true);
-      pressCode = preferences.getUChar("press", 'k');
-      pressMod = preferences.getUChar("pressMod", 0);
-      releaseCode = preferences.getUChar("release", 'm');
-      releaseMod = preferences.getUChar("releaseMod", 0);
+      mode = preferences.getUChar("mode", 0);
+      payload1 = preferences.getString("pl1", "");
+      payload2 = preferences.getString("pl2", "");
       preferences.end();
   }
 
-  // Helper to execute the combination
-  void sendAction(uint8_t key, uint8_t mod) {
-    if (mod > 0) press(mod); // Press Modifier (Ctrl/Shift/etc)
-    if (key > 0) press(key); // Press Key
-    delay(10);               // Brief hold
-    releaseAll();            // Release both
+  void performPress() {
+    if (mode == 0) {
+        // MODE 0: MOMENTARY (Combo)
+        // Parse payload1 (comma separated keys) and HOLD them
+        int start = 0;
+        while(start < payload1.length()) {
+            int comma = payload1.indexOf(',', start);
+            if (comma == -1) comma = payload1.length();
+            int code = payload1.substring(start, comma).toInt();
+            if(code > 0) press(code);
+            start = comma + 1;
+        }
+    } else {
+        // MODE 1: MACRO
+        // Run specific sequence
+        runSequence(payload1);
+    }
   }
 
-  void performPress() { sendAction(pressCode, pressMod); }
-  void performRelease() { sendAction(releaseCode, releaseMod); }
+  void performRelease() {
+    if (mode == 0) {
+        // MODE 0: Release Everything
+        releaseAll();
+    } else {
+        // MODE 1: MACRO
+        // Run release sequence
+        runSequence(payload2);
+    }
+  }
 
 protected:
   // Override onConnect to RESTART advertising so a 2nd device (App) can connect
@@ -108,24 +150,31 @@ protected:
     Serial.println("Device connected. Advertising restarted for multi-connect.");
   }
 
-  // Override onStarted to add our custom service
-  void onStarted(BLEServer *pServer) override {
+public: 
+  void begin(void) {
+    BleKeyboard::begin();
+
     configService = pServer->createService(CONFIG_SERVICE_UUID);
     configCharacteristic = configService->createCharacteristic(
         CONFIG_CHARACTERISTIC_UUID,
         BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_NOTIFY
     );
     
-    // Format: "key,mod,key,mod"
-    String currentConfig = String(pressCode) + "," + String(pressMod) + "," + 
-                           String(releaseCode) + "," + String(releaseMod);
+    // Send current config as default value
+    String currentConfig = String(mode) + "#" + payload1 + "#" + payload2;
+    
     configCharacteristic->setValue(currentConfig.c_str());
     configCharacteristic->setCallbacks(new ConfigCallback(this));
     configService->start();
-
-    // REMOVED to save space in the advertising packet. 
-    // This allows the Name "FootSwitch" to fit and be visible on Windows.
-    // pServer->getAdvertising()->addServiceUUID(CONFIG_SERVICE_UUID);
+    
+    // Update advertising? Default advertising only shows HID. 
+    // But we can just connect to the device and discover this service.
+    // For specific discovery, we'd need to add the UUID to advertising.
+    BLEAdvertising* pAdvertising = pServer->getAdvertising();
+    pAdvertising->addServiceUUID(CONFIG_SERVICE_UUID);
+    // Restart advertising to pick up the new UUID
+    pAdvertising->stop();
+    pAdvertising->start();
   }
 };
 
