@@ -33,15 +33,33 @@
         <h3>2. Configure Keys</h3>
         
         <div class="row">
-            <label>Press Key:</label>
-            <input type="text" id="pressChar" maxlength="1" placeholder="k">
-            <span>(Code: <span id="pressCode">107</span>)</span>
+            <label>Press Action:</label>
+            <div style="display:flex; gap:5px;">
+                <select id="pressMod">
+                    <option value="0">None</option>
+                    <option value="128">Ctrl</option>
+                    <option value="129">Shift</option>
+                    <option value="130">Alt</option>
+                    <option value="131">Win</option>
+                </select>
+                <input type="text" id="pressChar" maxlength="1" placeholder="k" style="width:40px;">
+            </div>
+            <span style="font-size:12px; color:#666;">(Code: <span id="pressCode">107</span>)</span>
         </div>
 
         <div class="row">
-            <label>Release Key:</label>
-            <input type="text" id="releaseChar" maxlength="1" placeholder="m">
-            <span>(Code: <span id="releaseCode">109</span>)</span>
+            <label>Release Action:</label>
+            <div style="display:flex; gap:5px;">
+                <select id="releaseMod">
+                    <option value="0">None</option>
+                    <option value="128">Ctrl</option>
+                    <option value="129">Shift</option>
+                    <option value="130">Alt</option>
+                    <option value="131">Win</option>
+                </select>
+                <input type="text" id="releaseChar" maxlength="1" placeholder="m" style="width:40px;">
+            </div>
+            <span style="font-size:12px; color:#666;">(Code: <span id="releaseCode">109</span>)</span>
         </div>
 
         <button id="btnSave">Save Configuration</button>
@@ -60,6 +78,8 @@
         
         const pressInput = document.getElementById('pressChar');
         const releaseInput = document.getElementById('releaseChar');
+        const pressMod = document.getElementById('pressMod');
+        const releaseMod = document.getElementById('releaseMod');
         
         // Helper to update code display
         function updateCodes() {
@@ -99,13 +119,29 @@
                 const str = decoder.decode(value);
                 console.log("Read:", str);
                 
-                // Parse "107,109"
+                // Parse "107,128,109,0" (Key,Mod,Key,Mod)
                 const parts = str.split(',');
-                if(parts.length === 2) {
+                if(parts.length >= 4) {
+                    const p = parseInt(parts[0]);
+                    const pM = parseInt(parts[1]);
+                    const r = parseInt(parts[2]);
+                    const rM = parseInt(parts[3]);
+                    
+                    pressInput.value = String.fromCharCode(p);
+                    pressMod.value = pM;
+                    
+                    releaseInput.value = String.fromCharCode(r);
+                    releaseMod.value = rM;
+                    
+                    updateCodes();
+                } else if(parts.length === 2) {
+                     // Backward compatibility for old format
                     const p = parseInt(parts[0]);
                     const r = parseInt(parts[1]);
                     pressInput.value = String.fromCharCode(p);
+                    pressMod.value = 0;
                     releaseInput.value = String.fromCharCode(r);
+                    releaseMod.value = 0;
                     updateCodes();
                 }
 
@@ -120,15 +156,18 @@
         btnSave.addEventListener('click', async () => {
             if (!characteristic) return;
 
-            const pCode = pressInput.value.charCodeAt(0);
-            const rCode = releaseInput.value.charCodeAt(0);
+            const pCode = pressInput.value.charCodeAt(0) || 0;
+            const pMod = pressMod.value;
+            const rCode = releaseInput.value.charCodeAt(0) || 0;
+            const rMod = releaseMod.value;
 
             if (!pCode || !rCode) {
                 showStatus('Please enter valid characters', 'error');
                 return;
             }
 
-            const data = `${pCode},${rCode}`;
+            // Send format: Key,Mod,Key,Mod
+            const data = `${pCode},${pMod},${rCode},${rMod}`;
             const encoder = new TextEncoder();
             
             try {

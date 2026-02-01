@@ -5,7 +5,7 @@
 const int SWITCH_PIN = 23;
 
 // Name the device "FootSwitch"
-ConfigKeyboard bleKeyboard("FootSwitch", "DIY", 100);
+ConfigKeyboard kb("FootSwitch", "DIY", 100);
 
 
 // Variable to store the last known state of the switch
@@ -13,7 +13,7 @@ int lastState = -1;
 
 void setup() {
   Serial.begin(115200);
-  Serial.println("Starting FootSwitch BLE...");
+  Serial.println("Starting FootSwitch BLE (Configurable)...");
 
   // ESP32 supports internal Pull-Down resistors.
   // This ensures the pin is LOW when the switch is open,
@@ -21,12 +21,12 @@ void setup() {
   pinMode(SWITCH_PIN, INPUT_PULLDOWN);
 
   // Initialize BLE Keyboard
-  bleKeyboard.begin();
+  kb.begin();
 }
 
 void loop() {
   // Only process input if Bluetooth is connected to a device
-  if(bleKeyboard.isConnected()) {
+  if(kb.isConnected()) {
     
     int currentState = digitalRead(SWITCH_PIN);
 
@@ -41,13 +41,13 @@ void loop() {
             if (currentState == HIGH) {
                 // Switch Depressed (Transition to HIGH)
                 // Use the configured key code
-                Serial.printf("Depressed -> Sending %d\n", bleKeyboard.getPressKey());
-                bleKeyboard.write(bleKeyboard.getPressKey()); 
+                Serial.printf("Depressed -> Action\n");
+                kb.performPress(); 
             } else {
                 // Switch Released (Transition to LOW)
                 // Use the configured key code
-                Serial.printf("Released -> Sending %d\n", bleKeyboard.getReleaseKey());
-                bleKeyboard.write(bleKeyboard.getReleaseKey());
+                Serial.printf("Released -> Action\n");
+                kb.performRelease();
             }
             
             // Update last state

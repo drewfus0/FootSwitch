@@ -17,95 +17,115 @@ private:
   BLECharacteristic* configCharacteristic;
   Preferences preferences;
 
-  // Current Key Codes (default to 'k' and 'm')
+  // Key Codes and Modifiers
+  // Modifiers: 0=None, 128=Ctrl, 129=Shift, 130=Alt, 131=Gui (Win/Cmd)
   uint8_t pressCode = 'k';
+  uint8_t pressMod = 0;
+  
   uint8_t releaseCode = 'm';
+  uint8_t releaseMod = 0;
 
-  // Helper to parse "107,109" string to integers
+  // Helper to parse "key,mod,key,mod" (e.g. "99,128,109,0")
   void parseAndSave(std::string value) {
     String data = String(value.c_str());
-    int commaIndex = data.indexOf(',');
     
-    if (commaIndex > 0) {
-      String pStr = data.substring(0, commaIndex);
-      String rStr = data.substring(commaIndex + 1);
-      
-      uint8_t p = (uint8_t)pStr.toInt();
-      uint8_t r = (uint8_t)rStr.toInt();
-      
-      if (p > 0 && r > 0) {
-        pressCode = p;
-        releaseCode = r;
+    // Simple parser for 4 comma-separated values
+    int first = data.indexOf(',');
+    int second = data.indexOf(',', first + 1);
+    int third = data.indexOf(',', second + 1);
+
+    if (first > 0 && second > 0 && third > 0) {
+      uint8_t pKey = data.substring(0, first).toInt();
+      uint8_t pMod = data.substring(first + 1, second).toInt();
+      uint8_t rKey = data.substring(second + 1, third).toInt();
+      uint8_t rMod = data.substring(third + 1).toInt();
+
+      if (pKey > 0 && rKey > 0) {
+        pressCode = pKey;
+        pressMod = pMod;
+        releaseCode = rKey;
+        releaseMod = rMod;
         
         // Save to NVS
         preferences.begin("footswitch", false);
         preferences.putUChar("press", pressCode);
+        preferences.putUChar("pressMod", pressMod);
         preferences.putUChar("release", releaseCode);
+        preferences.putUChar("releaseMod", releaseMod);
         preferences.end();
         
-        Serial.printf("Config Saved! Press: %d, Release: %d\n", pressCode, releaseCode);
+        Serial.printf("Config Saved! Press: %d (Mod %d), Release: %d (Mod %d)\n", pressCode, pressMod, releaseCode, releaseMod);
         
-        // Notify the client of the update
+        // Notify client
         configCharacteristic->setValue(value);
         configCharacteristic->notify();
       }
     }
   }
 
-  // Callback class to handle writes
   class ConfigCallback : public BLECharacteristicCallbacks {
   private:
     ConfigKeyboard* parent;
   public:
     ConfigCallback(ConfigKeyboard* p) : parent(p) {}
-    
     void onWrite(BLECharacteristic* pCharacteristic) {
       std::string value = pCharacteristic->getValue();
-      if (value.length() > 0) {
-        parent->parseAndSave(value);
-      }
+      if (value.length() > 0) parent->parseAndSave(value);
     }
   };
 
 public:
   ConfigKeyboard(std::string name = "FootSwitch", std::string manufacturer = "DIY", uint8_t batteryLevel = 100) 
     : BleKeyboard(name, manufacturer, batteryLevel) {
-      // Load saved values on startup
-      preferences.begin("footswitch", true); // true = read-only
+      preferences.begin("footswitch", true);
       pressCode = preferences.getUChar("press", 'k');
+      pressMod = preferences.getUChar("pressMod", 0);
       releaseCode = preferences.getUChar("release", 'm');
+      releaseMod = preferences.getUChar("releaseMod", 0);
       preferences.end();
   }
 
-  uint8_t getPressKey() { return pressCode; }
-  uint8_t getReleaseKey() { return releaseCode; }
+  // Helper to execute the combination
+  void sendAction(uint8_t key, uint8_t mod) {
+    if (mod > 0) press(mod); // Press Modifier (Ctrl/Shift/etc)
+    if (key > 0) press(key); // Press Key
+    delay(10);               // Brief hold
+    releaseAll();            // Release both
+  }
+
+  void performPress() { sendAction(pressCode, pressMod); }
+  void performRelease() { sendAction(releaseCode, releaseMod); }
 
 protected:
+  // Override onConnect to RESTART advertising so a 2nd device (App) can connect
+  // even while the PC is connected as a Keyboard.
+  void onConnect(BLEServer* pServer) override {
+    // Call parent method so BleKeyboard knows we are connected
+    BleKeyboard::onConnect(pServer); 
+    
+    // Restart Advertising immediately
+    pServer->getAdvertising()->start();
+    Serial.println("Device connected. Advertising restarted for multi-connect.");
+  }
+
   // Override onStarted to add our custom service
   void onStarted(BLEServer *pServer) override {
-    // 1. Create Service
     configService = pServer->createService(CONFIG_SERVICE_UUID);
-
-    // 2. Create Characteristic
     configCharacteristic = configService->createCharacteristic(
         CONFIG_CHARACTERISTIC_UUID,
-        BLECharacteristic::PROPERTY_READ |
-        BLECharacteristic::PROPERTY_WRITE |
-        BLECharacteristic::PROPERTY_NOTIFY
+        BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_NOTIFY
     );
     
-    // 3. Set initial value (current config)
-    String currentConfig = String(pressCode) + "," + String(releaseCode);
+    // Format: "key,mod,key,mod"
+    String currentConfig = String(pressCode) + "," + String(pressMod) + "," + 
+                           String(releaseCode) + "," + String(releaseMod);
     configCharacteristic->setValue(currentConfig.c_str());
-    
-    // 4. Set Callback
     configCharacteristic->setCallbacks(new ConfigCallback(this));
-
-    // 5. Start Service
     configService->start();
 
-    // 6. Advertise this service so the Web App can find it
-    pServer->getAdvertising()->addServiceUUID(CONFIG_SERVICE_UUID);
+    // REMOVED to save space in the advertising packet. 
+    // This allows the Name "FootSwitch" to fit and be visible on Windows.
+    // pServer->getAdvertising()->addServiceUUID(CONFIG_SERVICE_UUID);
   }
 };
 
