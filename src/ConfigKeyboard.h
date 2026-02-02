@@ -24,7 +24,7 @@ private:
 
   // Helper to run a macro sequence
   // Strings format: "Actions,Value,Action,Value..."
-  // Actions: 1=TAP, 2=DELAY
+  // Actions: 1=TAP, 2=DELAY, 3=PRESS, 4=RELEASE
   void runSequence(String seq) {
     if (seq.length() == 0) return;
     
@@ -42,10 +42,13 @@ private:
         
         // Execute
         if (action == 1) { // TAP
-            // write() sends a press and release
             write(val);
         } else if (action == 2) { // DELAY
             delay(val);
+        } else if (action == 3) { // PRESS
+            press(val);
+        } else if (action == 4) { // RELEASE
+            release(val);
         }
         
         start = comma2 + 1;
@@ -150,10 +153,7 @@ protected:
     Serial.println("Device connected. Advertising restarted for multi-connect.");
   }
 
-public: 
-  void begin(void) {
-    BleKeyboard::begin();
-
+  void onStarted(BLEServer *pServer) override {
     configService = pServer->createService(CONFIG_SERVICE_UUID);
     configCharacteristic = configService->createCharacteristic(
         CONFIG_CHARACTERISTIC_UUID,
@@ -167,14 +167,8 @@ public:
     configCharacteristic->setCallbacks(new ConfigCallback(this));
     configService->start();
     
-    // Update advertising? Default advertising only shows HID. 
-    // But we can just connect to the device and discover this service.
-    // For specific discovery, we'd need to add the UUID to advertising.
     BLEAdvertising* pAdvertising = pServer->getAdvertising();
     pAdvertising->addServiceUUID(CONFIG_SERVICE_UUID);
-    // Restart advertising to pick up the new UUID
-    pAdvertising->stop();
-    pAdvertising->start();
   }
 };
 

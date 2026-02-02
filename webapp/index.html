@@ -24,7 +24,9 @@
         
         .list-container { background: #f8f9fa; padding: 10px; border-radius: 6px; margin-bottom: 15px; border: 1px solid #e9ecef; }
         .list-item { display: flex; justify-content: space-between; align-items: center; background: white; padding: 8px; margin-bottom: 5px; border-radius: 4px; border: 1px solid #dee2e6; }
-        .step-adder { display: flex; gap: 10px; align-items: center; background: #eee; padding: 10px; border-radius: 6px; }
+        
+        .step-adder { display: flex; gap: 5px; align-items: center; background: #eee; padding: 10px; border-radius: 6px; flex-wrap: wrap; }
+        .step-adder select, .step-adder input { max-width: 100px; }
     </style>
 </head>
 <body>
@@ -77,34 +79,26 @@
         <div id="uiMode1" style="display:none;">
             <p><strong>Behavior:</strong> Run A on press, B on release.</p>
             
+            <!-- PRESS SEQUENCE -->
             <h4>Sequence A (Press)</h4>
             <div class="list-container" id="listMacroPress"></div>
             
-            <h4>Sequence B (Release)</h4>
-            <div class="list-container" id="listMacroRelease"></div>
-
-            <hr>
-            <h4>Add Step</h4>
-            <div class="step-adder">
-                <label>Add to: </label>
-                <select id="m1_target">
-                    <option value="press">Press Seq</option>
-                    <option value="release">Release Seq</option>
-                </select>
-                
-                <select id="m1_type">
-                    <option value="1">Tap Key</option>
+            <div class="step-adder" id="adder_press">
+                <select class="type-sel">
+                    <option value="1">Tap</option>
+                    <option value="3">Press</option>
+                    <option value="4">Release</option>
                     <option value="2">Delay</option>
                 </select>
                 
-                <!-- Type: Key -->
-                <span class="m1-val-key">
-                    <select id="m1_key_type">
+                <!-- Keys UI -->
+                <span class="val-key">
+                    <select class="key-type-sel">
                         <option value="char">Char</option>
                         <option value="mod">Mod</option>
                     </select>
-                    <input type="text" id="m1_char" maxlength="1" placeholder="k" style="width:30px;">
-                    <select id="m1_mod" style="display:none; width:60px;">
+                    <input type="text" class="input-char" maxlength="1" placeholder="k" style="width:30px;">
+                    <select class="input-mod" style="display:none; width:60px;">
                         <option value="128">Ctrl</option>
                         <option value="129">Shift</option>
                         <option value="130">Alt</option>
@@ -112,13 +106,51 @@
                     </select>
                 </span>
 
-                <!-- Type: Delay -->
-                <span class="m1-val-delay" style="display:none;">
-                    <input type="number" id="m1_ms" placeholder="ms" value="100" style="width:60px;"> ms
+                <!-- Delay UI -->
+                <span class="val-delay" style="display:none;">
+                    <input type="number" class="input-ms" placeholder="ms" value="100" style="width:60px;"> ms
                 </span>
 
-                <button class="secondary" id="btnAddStep">Add Step</button>
+                <button class="secondary" onclick="addMacroStep('press')">Add</button>
             </div>
+            
+            <hr>
+
+            <!-- RELEASE SEQUENCE -->
+            <h4>Sequence B (Release)</h4>
+            <div class="list-container" id="listMacroRelease"></div>
+
+            <div class="step-adder" id="adder_release">
+                <select class="type-sel">
+                    <option value="1">Tap</option>
+                    <option value="3">Press</option>
+                    <option value="4">Release</option>
+                    <option value="2">Delay</option>
+                </select>
+                
+                <!-- Keys UI -->
+                <span class="val-key">
+                    <select class="key-type-sel">
+                        <option value="char">Char</option>
+                        <option value="mod">Mod</option>
+                    </select>
+                    <input type="text" class="input-char" maxlength="1" placeholder="k" style="width:30px;">
+                    <select class="input-mod" style="display:none; width:60px;">
+                        <option value="128">Ctrl</option>
+                        <option value="129">Shift</option>
+                        <option value="130">Alt</option>
+                        <option value="131">Win</option>
+                    </select>
+                </span>
+
+                <!-- Delay UI -->
+                <span class="val-delay" style="display:none;">
+                    <input type="number" class="input-ms" placeholder="ms" value="100" style="width:60px;"> ms
+                </span>
+
+                <button class="secondary" onclick="addMacroStep('release')">Add</button>
+            </div>
+
         </div>
 
         <button id="btnSave">Save Configuration</button>
@@ -134,8 +166,8 @@
         let config = {
             mode: 0,
             momentaryKeys: [], // Array of integers
-            macroPress: [],    // Array of {action:1|2, val:int}
-            macroRelease: []   // Array of {action:1|2, val:int}
+            macroPress: [],    // Array of {action:1|3|4|2, val:int}
+            macroRelease: []   // Array of {action:1|3|4|2, val:int}
         };
 
         // --- DOM Elements ---
@@ -165,6 +197,14 @@
             return "Key: " + String.fromCharCode(code);
         }
 
+        function getActionName(act) {
+            if(act === 1) return "Tap";
+            if(act === 2) return "Wait";
+            if(act === 3) return "Down";
+            if(act === 4) return "Up";
+            return "?";
+        }
+
         function renderLists() {
             // Momentary
             const listM = document.getElementById('listMomentary');
@@ -183,9 +223,12 @@
                 list.forEach((step, idx) => {
                     const div = document.createElement('div');
                     div.className = 'list-item';
-                    let desc = step.action == 1 ? `Typing ${getKeyName(step.val)}` : `Wait ${step.val}ms`;
-                    let icon = step.action == 1 ? '⌨️' : '⏱️';
-                    div.innerHTML = `<span>${icon} ${desc}</span> <button class="danger" onclick="removeMacro('${targetName}', ${idx})">×</button>`;
+                    
+                    let act = getActionName(step.action);
+                    let valStr = step.action == 2 ? `${step.val}ms` : getKeyName(step.val);
+                    let icon = step.action == 2 ? '⏱️' : '⌨️';
+                    
+                    div.innerHTML = `<span>${icon} <b>${act}</b> ${valStr}</span> <button class="danger" onclick="removeMacro('${targetName}', ${idx})">×</button>`;
                     el.appendChild(div);
                 });
             };
@@ -205,24 +248,34 @@
             renderLists();
         };
 
-        // Input Toggles
+        // --- Init Adders ---
+        function setupAdder(idPrefix) {
+            const container = document.getElementById(idPrefix);
+            const typeSel = container.querySelector('.type-sel');
+            const keyTypeSel = container.querySelector('.key-type-sel');
+            
+            const updateVis = () => {
+                 const isDelay = typeSel.value == '2';
+                 container.querySelector('.val-key').style.display = isDelay ? 'none' : 'inline-block';
+                 container.querySelector('.val-delay').style.display = isDelay ? 'inline-block' : 'none';
+                 
+                 const isMod = keyTypeSel.value === 'mod';
+                 container.querySelector('.input-mod').style.display = isMod ? 'inline-block' : 'none';
+                 container.querySelector('.input-char').style.display = isMod ? 'none' : 'inline-block';
+            };
+
+            typeSel.addEventListener('change', updateVis);
+            keyTypeSel.addEventListener('change', updateVis);
+        }
+        
+        setupAdder('adder_press');
+        setupAdder('adder_release');
+
+        // Mode 0 Adder setup
         document.getElementById('m0_type').addEventListener('change', (e) => {
             document.getElementById('m0_input_char').style.display = e.target.value === 'char' ? 'block' : 'none';
             document.getElementById('m0_input_mod').style.display = e.target.value === 'mod' ? 'block' : 'none';
         });
-
-        document.getElementById('m1_type').addEventListener('change', (e) => {
-            const isDelay = e.target.value == '2';
-            document.querySelector('.m1-val-key').style.display = isDelay ? 'none' : 'inline-block';
-            document.querySelector('.m1-val-delay').style.display = isDelay ? 'inline-block' : 'none';
-        });
-
-        document.getElementById('m1_key_type').addEventListener('change', (e) => {
-             const isMod = e.target.value === 'mod';
-             document.getElementById('m1_mod').style.display = isMod ? 'inline-block' : 'none';
-             document.getElementById('m1_char').style.display = isMod ? 'none' : 'inline-block';
-        });
-
 
         // --- Add Logic ---
 
@@ -241,22 +294,22 @@
              renderLists();
         });
 
-        document.getElementById('btnAddStep').addEventListener('click', () => {
-            const target = document.getElementById('m1_target').value;
-            const type = parseInt(document.getElementById('m1_type').value);
+        window.addMacroStep = (target) => {
+            const container = document.getElementById(target === 'press' ? 'adder_press' : 'adder_release');
+            const type = parseInt(container.querySelector('.type-sel').value);
             let val = 0;
 
             if(type === 2) { // Delay
-                val = parseInt(document.getElementById('m1_ms').value) || 0;
+                val = parseInt(container.querySelector('.input-ms').value) || 0;
             } else { // Key
-                const keyType = document.getElementById('m1_key_type').value;
+                const keyType = container.querySelector('.key-type-sel').value;
                 if(keyType === 'mod') {
-                    val = parseInt(document.getElementById('m1_mod').value);
+                    val = parseInt(container.querySelector('.input-mod').value);
                 } else {
-                    const char = document.getElementById('m1_char').value;
-                    if(!char) return;
-                    val = char.charCodeAt(0);
-                    document.getElementById('m1_char').value = '';
+                    const charInput = container.querySelector('.input-char');
+                    if(!charInput.value) return;
+                    val = charInput.value.charCodeAt(0);
+                    charInput.value = '';
                 }
             }
 
@@ -264,7 +317,7 @@
             if (target === 'press') config.macroPress.push(step);
             else config.macroRelease.push(step);
             renderLists();
-        });
+        }
 
 
         // --- Bluetooth Logic ---
