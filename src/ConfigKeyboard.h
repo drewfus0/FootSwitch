@@ -7,6 +7,8 @@
 #include <BLEServer.h>
 #include <Preferences.h>
 #include <BLE2902.h>
+#include <vector>
+#include "Switch.h"
 
 // UUIDs for the Configuration Service
 #define CONFIG_SERVICE_UUID        "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
@@ -18,77 +20,145 @@ private:
   BLECharacteristic* configCharacteristic;
   Preferences preferences;
 
-  // New State Variables
-  uint8_t mode = 0; // 0 = Momentary/Combo, 1 = Macro
-  String payload1 = ""; // Combo Keys (Mode 0) or Press Sequence (Mode 1)
-  String payload2 = ""; // Unused (Mode 0) or Release Sequence (Mode 1)
+  std::vector<Switch*> switches;
 
-  // Helper to run a macro sequence
-  // Strings format: "Actions,Value,Action,Value..."
-  // Actions: 1=TAP, 2=DELAY, 3=PRESS, 4=RELEASE
-  void runSequence(String seq) {
-    if (seq.length() == 0) return;
+  // Helper to load settings for a specific switch index
+  void loadSwitch(int i) {
+    char key[16];
+
+    sprintf(key, "sw%d_pin", i);
+    uint8_t pin = preferences.getUChar(key, 0);
+
+    sprintf(key, "sw%d_mode", i);
+    uint8_t m = preferences.getUChar(key, 0);
+
+    sprintf(key, "sw%d_pl1", i);
+    String p1 = preferences.getString(key, "");
+
+    sprintf(key, "sw%d_pl2", i);
+    String p2 = preferences.getString(key, "");
+
+    Switch* s = new Switch(i, this);
+    if (pin > 0) s->begin(pin);
+    s->updateConfig(m, p1, p2);
+    switches.push_back(s);
     
-    int start = 0;
-    while(start < seq.length()) {
-        // Parse Action
-        int comma1 = seq.indexOf(',', start);
-        if(comma1 == -1) break; // Invalid format
-        int action = seq.substring(start, comma1).toInt();
-        
-        // Parse Value
-        int comma2 = seq.indexOf(',', comma1 + 1);
-        if(comma2 == -1) comma2 = seq.length();
-        int val = seq.substring(comma1 + 1, comma2).toInt();
-        
-        // Execute
-        if (action == 1) { // TAP
-            write(val);
-        } else if (action == 2) { // DELAY
-            delay(val);
-        } else if (action == 3) { // PRESS
-            press(val);
-        } else if (action == 4) { // RELEASE
-            release(val);
-        }
-        
-        start = comma2 + 1;
-    }
+    Serial.printf("Loaded Switch %d: Pin %d\n", i, pin);
   }
 
-  // Parse "MODE#PAYLOAD1#PAYLOAD2"
+  // Save specific switch
+  void saveSwitch(int i, uint8_t pin, uint8_t mode, String p1, String p2) {
+    char key[16];
+    
+    sprintf(key, "sw%d_pin", i);
+    preferences.putUChar(key, pin);
+    
+    sprintf(key, "sw%d_mode", i);
+    preferences.putUChar(key, mode);
+    
+    sprintf(key, "sw%d_pl1", i);
+    preferences.putString(key, p1);
+
+    sprintf(key, "sw%d_pl2", i);
+    preferences.putString(key, p2);
+  }
+
+  // Parse New Protocol
   void parseAndSave(std::string value) {
     String data = String(value.c_str());
+    Serial.println("Received: " + data);
     
-    int firstHash = data.indexOf('#');
-    int secondHash = data.indexOf('#', firstHash + 1);
+    preferences.begin("footswitch", false);
 
-    // Basic validity check
-    if (firstHash > 0) {
-      mode = data.substring(0, firstHash).toInt();
-      
-      if (secondHash > 0) {
-          payload1 = data.substring(firstHash + 1, secondHash);
-          payload2 = data.substring(secondHash + 1);
-      } else {
-          // Fallback if second hash missing
-          payload1 = data.substring(firstHash + 1);
-          payload2 = "";
-      }
-
-      // Save to NVS
-      preferences.begin("footswitch", false);
-      preferences.putUChar("mode", mode);
-      preferences.putString("pl1", payload1);
-      preferences.putString("pl2", payload2);
-      preferences.end();
-      
-      Serial.printf("Config Saved! Mode: %d\nPL1: %s\nPL2: %s\n", mode, payload1.c_str(), payload2.c_str());
-      
-      // Notify client
-      configCharacteristic->setValue(value);
-      configCharacteristic->notify();
+    if (data.startsWith("ADD:")) {
+        int pin = data.substring(4).toInt();
+        if (pin > 0) {
+            int newIdx = switches.size();
+            
+            // Save Switch Default
+            saveSwitch(newIdx, pin, 0, "", "");
+            // Save New Count
+            preferences.putUChar("count", newIdx + 1);
+            
+            // Live Update
+            Switch* s = new Switch(newIdx, this);
+            s->begin(pin);
+            switches.push_back(s);
+            
+            Serial.printf("Added Switch %d on Pin %d\n", newIdx, pin);
+        }
+    } 
+    else if (data.startsWith("del:")) {
+        // Implementing simple clear for now as full delete requires shifting indices
+        Serial.println("Delete not fully impl, use clr");
     }
+    else if (data.startsWith("clr") || data.startsWith("CLR")) {
+        preferences.clear();
+        for(auto s : switches) delete s;
+        switches.clear();
+        preferences.putUChar("count", 0);
+        Serial.println("Cleared All Switches");
+    }
+    else if (data.startsWith("CFG:")) {
+        // CFG:INDEX:PIN:MODE#PL1#PL2
+        // Find separators
+        int firstColon = 3; // "CFG"
+        int secondColon = data.indexOf(':', firstColon + 1); // Index
+        int thirdColon = data.indexOf(':', secondColon + 1); // Pin
+        
+        if (secondColon > 0 && thirdColon > 0) {
+            int idx = data.substring(firstColon + 1, secondColon).toInt();
+            int pin = data.substring(secondColon + 1, thirdColon).toInt();
+            
+            // Mode and Payloads are separated by #
+            // Remaining string starting after thirdColon
+            String rest = data.substring(thirdColon + 1);
+            int hash1 = rest.indexOf('#');
+            int hash2 = rest.indexOf('#', hash1 + 1);
+            
+            uint8_t mode = 0;
+            String pl1 = "", pl2 = "";
+
+            if (hash1 > 0) {
+                mode = rest.substring(0, hash1).toInt();
+                if (hash2 > 0) {
+                    pl1 = rest.substring(hash1 + 1, hash2);
+                    pl2 = rest.substring(hash2 + 1);
+                } else {
+                    pl1 = rest.substring(hash1 + 1);
+                }
+            } else {
+                // If no hash, maybe just mode?
+                mode = rest.toInt();
+            }
+
+            if (idx >= 0 && idx < switches.size()) {
+                saveSwitch(idx, pin, mode, pl1, pl2);
+                
+                // Live Update
+                switches[idx]->setPin(pin);
+                switches[idx]->updateConfig(mode, pl1, pl2);
+                
+                Serial.printf("Configured Switch %d\n", idx);
+            }
+            else if (idx == switches.size()) {
+                // Allow implicit Add
+                saveSwitch(idx, pin, mode, pl1, pl2);
+                preferences.putUChar("count", idx + 1);
+                
+                Switch* s = new Switch(idx, this);
+                s->begin(pin);
+                s->updateConfig(mode, pl1, pl2);
+                switches.push_back(s);
+            }
+        }
+    }
+    
+    preferences.end();
+    
+    // Notify client of echo?
+    configCharacteristic->setValue(value);
+    configCharacteristic->notify();
   }
 
   class ConfigCallback : public BLECharacteristicCallbacks {
@@ -108,81 +178,75 @@ public:
   }
 
   void begin() {
-    // Load config from NVS (Safe to do in begin/setup)
-    preferences.begin("footswitch", true);
-    mode = preferences.getUChar("mode", 0);
-    payload1 = preferences.getString("pl1", "");
-    payload2 = preferences.getString("pl2", "");
+    preferences.begin("footswitch", true); // Read Only
+    int count = preferences.getUChar("count", 0);
+    
+    // Migration Logic: If count is 0 but "mode" exists
+    if (count == 0 && preferences.isKey("mode")) {
+        Serial.println("Migrating Legacy Config...");
+        preferences.end();
+        preferences.begin("footswitch", false);
+        
+        uint8_t m = preferences.getUChar("mode", 0);
+        String p1 = preferences.getString("pl1", "");
+        String p2 = preferences.getString("pl2", "");
+        
+        preferences.putUChar("count", 1);
+        saveSwitch(0, 23, m, p1, p2); // Default to pin 23
+        
+        count = 1;
+    }
+    
     preferences.end();
-    Serial.printf("Config Loaded from NVS -> Mode: %d, PL1 Len: %d\n", mode, payload1.length());
+    
+    preferences.begin("footswitch", true);
+    for(int i=0; i<count; i++) {
+        loadSwitch(i);
+    }
+    preferences.end();
 
     Serial.println("ConfigKeyboard::begin() called");
     BleKeyboard::begin();
     
-    // Fix: Stop Advertising, Enable Scan Response (for UUIDs to fit), and Restart
     BLEAdvertising* pAdvertising = BLEDevice::getAdvertising();
     pAdvertising->stop();
     pAdvertising->setScanResponse(true);
     pAdvertising->start();
-    Serial.println("Advertising restarted with Scan Response.");
+  }
+  
+  void tick() {
+      for(auto s : switches) {
+          s->tick();
+      }
   }
 
-  void performPress() {
-    if (mode == 0) {
-        // MODE 0: MOMENTARY (Combo)
-        // Parse payload1 (comma separated keys) and HOLD them
-        int start = 0;
-        while(start < payload1.length()) {
-            int comma = payload1.indexOf(',', start);
-            if (comma == -1) comma = payload1.length();
-            int code = payload1.substring(start, comma).toInt();
-            if(code > 0) press(code);
-            start = comma + 1;
-        }
-    } else {
-        // MODE 1: MACRO
-        // Run specific sequence
-        runSequence(payload1);
-    }
-  }
-
-  void performRelease() {
-    if (mode == 0) {
-        // MODE 0: Release Everything
-        releaseAll();
-    } else {
-        // MODE 1: MACRO
-        // Run release sequence
-        runSequence(payload2);
-    }
+  // Get current config as string (for reading)
+  // Format: "COUNT:N;SW:0:PIN:MODE;SW:1:..."
+  String getConfigString() {
+      String s = "COUNT:" + String(switches.size()) + ";";
+      for(int i=0; i<switches.size(); i++) {
+          s += "SW:" + String(i) + ":" + String(switches[i]->getPin()) + ";";
+      }
+      return s;
   }
 
 protected:
-  // Override onConnect to RESTART advertising so a 2nd device (App) can connect
-  // even while the PC is connected as a Keyboard.
   void onConnect(BLEServer* pServer) override {
-    // Call parent method so BleKeyboard knows we are connected
     BleKeyboard::onConnect(pServer); 
-    
-    // Restart Advertising immediately
     pServer->getAdvertising()->start();
-    Serial.println("Device connected. Advertising restarted for multi-connect.");
   }
 
   void onStarted(BLEServer *pServer) override {
-    Serial.println("ConfigKeyboard::onStarted() called");
     configService = pServer->createService(CONFIG_SERVICE_UUID);
     configCharacteristic = configService->createCharacteristic(
         CONFIG_CHARACTERISTIC_UUID,
         BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_NOTIFY
     );
-    // Add Client Characteristic Configuration Descriptor (CCCD) for notifications
     configCharacteristic->addDescriptor(new BLE2902());
     
-    // Send current config as default value
-    String currentConfig = String(mode) + "#" + payload1 + "#" + payload2;
+    // Set Initial Value
+    configCharacteristic->setValue(getConfigString().c_str());
     
-    configCharacteristic->setValue(currentConfig.c_str());
     configCharacteristic->setCallbacks(new ConfigCallback(this));
     configService->start();
     
