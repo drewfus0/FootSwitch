@@ -6,6 +6,7 @@
 #include <BLEUtils.h>
 #include <BLEServer.h>
 #include <Preferences.h>
+#include <BLE2902.h>
 
 // UUIDs for the Configuration Service
 #define CONFIG_SERVICE_UUID        "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
@@ -111,6 +112,18 @@ public:
       preferences.end();
   }
 
+  void begin() {
+    Serial.println("ConfigKeyboard::begin() called");
+    BleKeyboard::begin();
+    
+    // Fix: Stop Advertising, Enable Scan Response (for UUIDs to fit), and Restart
+    BLEAdvertising* pAdvertising = BLEDevice::getAdvertising();
+    pAdvertising->stop();
+    pAdvertising->setScanResponse(true);
+    pAdvertising->start();
+    Serial.println("Advertising restarted with Scan Response.");
+  }
+
   void performPress() {
     if (mode == 0) {
         // MODE 0: MOMENTARY (Combo)
@@ -154,11 +167,14 @@ protected:
   }
 
   void onStarted(BLEServer *pServer) override {
+    Serial.println("ConfigKeyboard::onStarted() called");
     configService = pServer->createService(CONFIG_SERVICE_UUID);
     configCharacteristic = configService->createCharacteristic(
         CONFIG_CHARACTERISTIC_UUID,
         BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_NOTIFY
     );
+    // Add Client Characteristic Configuration Descriptor (CCCD) for notifications
+    configCharacteristic->addDescriptor(new BLE2902());
     
     // Send current config as default value
     String currentConfig = String(mode) + "#" + payload1 + "#" + payload2;
