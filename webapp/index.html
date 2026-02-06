@@ -30,20 +30,25 @@
     </style>
 </head>
 <body>
-    <div style="display: flex; justify-content: space-between; align-items: center;">
-        <h1>FootSwitch Config</h1>
-        <span id="batteryDisplay" style="font-weight: bold; color: #555; display:none;">Bat: --%</span>
-    </div>
+    <h1>FootSwitch Config</h1>
     
     <div id="status" class="status"></div>
 
     <div class="card">
         <h3>1. Connect</h3>
-        <button id="btnConnect">Connect to Device</button>
+        <button id="btnConnect">Find New Device</button>
+        <button id="btnDisconnect" class="danger" style="display:none;">Disconnect</button>
+        <div id="knownDevices" style="margin-top: 15px; display: none;">
+            <div style="font-size: 0.9em; color: #666; margin-bottom: 5px;">Known Devices:</div>
+            <div id="knownList" style="display: flex; flex-direction: column; gap: 5px;"></div>
+        </div>
     </div>
 
     <div class="card" id="configPanel" style="opacity: 0.5; pointer-events: none;">
-        <h3>2. Configure</h3>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h3>2. Configure</h3>
+            <span id="batteryDisplay" style="font-weight: bold; color: #555; display:none;">Bat: --%</span>
+        </div>
         
         <div class="mode-selector">
             <label class="mode-opt"><input type="radio" name="mode" value="0" checked> Momentary (Combo)</label>
@@ -58,21 +63,27 @@
                 <div style="color:#666; font-style:italic; text-align:center; padding:10px;">No keys added</div>
             </div>
             
+            <button id="btnRecordCombo" style="margin-bottom: 10px; background: #6f42c1;">🔴 Record Combo</button>
+
             <div class="step-adder">
                 <select id="m0_type">
                     <option value="char">Character</option>
                     <option value="mod">Modifier</option>
+                    <option value="code">Code</option>
                 </select>
                 <div id="m0_input_char">
                     <input type="text" id="m0_char" maxlength="1" placeholder="k" style="width:50px;">
                 </div>
                 <div id="m0_input_mod" style="display:none;">
                     <select id="m0_mod">
-                        <option value="128">Ctrl</option>
+                        <option value="128">Control</option>
                         <option value="129">Shift</option>
                         <option value="130">Alt</option>
-                        <option value="131">Win</option>
+                        <option value="131">Meta</option>
                     </select>
+                </div>
+                <div id="m0_input_code" style="display:none;">
+                    <input type="number" id="m0_code" placeholder="176" style="width:60px;">
                 </div>
                 <button class="secondary" id="btnAddKey">Add Key</button>
             </div>
@@ -83,7 +94,10 @@
             <p><strong>Behavior:</strong> Run A on press, B on release.</p>
             
             <!-- PRESS SEQUENCE -->
-            <h4>Sequence A (Press)</h4>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+                <h4 style="margin:0;">Sequence A (Press)</h4>
+                <button id="btnRecordMacro_press" class="secondary" style="width:auto; font-size:12px; padding:4px 8px;">🔴 Record Live</button>
+            </div>
             <div class="list-container" id="listMacroPress"></div>
             
             <div class="step-adder" id="adder_press">
@@ -96,17 +110,20 @@
                 
                 <!-- Keys UI -->
                 <span class="val-key">
+                    <button class="secondary btn-detect" style="padding: 5px;" title="Detect Key">🔍</button>
                     <select class="key-type-sel">
                         <option value="char">Char</option>
                         <option value="mod">Mod</option>
+                        <option value="code">Code</option>
                     </select>
                     <input type="text" class="input-char" maxlength="1" placeholder="k" style="width:30px;">
-                    <select class="input-mod" style="display:none; width:60px;">
-                        <option value="128">Ctrl</option>
+                    <select class="input-mod" style="display:none; width:80px;">
+                        <option value="128">Control</option>
                         <option value="129">Shift</option>
                         <option value="130">Alt</option>
-                        <option value="131">Win</option>
+                        <option value="131">Meta</option>
                     </select>
+                    <input type="number" class="input-code" placeholder="176" style="display:none; width:50px;">
                 </span>
 
                 <!-- Delay UI -->
@@ -114,13 +131,17 @@
                     <input type="number" class="input-ms" placeholder="ms" value="100" style="width:60px;"> ms
                 </span>
 
-                <button class="secondary" onclick="addMacroStep('press')">Add</button>
+                <button id="btnAddStep_press" class="secondary" onclick="addMacroStep('press')">Add</button>
+                <button id="btnCancelEdit_press" class="secondary" style="display:none; background:#888;" onclick="cancelEdit('press')">Cancel</button>
             </div>
             
             <hr>
 
             <!-- RELEASE SEQUENCE -->
-            <h4>Sequence B (Release)</h4>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+                <h4 style="margin:0;">Sequence B (Release)</h4>
+                <button id="btnRecordMacro_release" class="secondary" style="width:auto; font-size:12px; padding:4px 8px;">🔴 Record Live</button>
+            </div>
             <div class="list-container" id="listMacroRelease"></div>
 
             <div class="step-adder" id="adder_release">
@@ -133,17 +154,20 @@
                 
                 <!-- Keys UI -->
                 <span class="val-key">
+                    <button class="secondary btn-detect" style="padding: 5px;" title="Detect Key">🔍</button>
                     <select class="key-type-sel">
                         <option value="char">Char</option>
                         <option value="mod">Mod</option>
+                        <option value="code">Code</option>
                     </select>
                     <input type="text" class="input-char" maxlength="1" placeholder="k" style="width:30px;">
-                    <select class="input-mod" style="display:none; width:60px;">
-                        <option value="128">Ctrl</option>
+                    <select class="input-mod" style="display:none; width:80px;">
+                        <option value="128">Control</option>
                         <option value="129">Shift</option>
                         <option value="130">Alt</option>
-                        <option value="131">Win</option>
+                        <option value="131">Meta</option>
                     </select>
+                    <input type="number" class="input-code" placeholder="176" style="display:none; width:50px;">
                 </span>
 
                 <!-- Delay UI -->
@@ -151,7 +175,8 @@
                     <input type="number" class="input-ms" placeholder="ms" value="100" style="width:60px;"> ms
                 </span>
 
-                <button class="secondary" onclick="addMacroStep('release')">Add</button>
+                <button id="btnAddStep_release" class="secondary" onclick="addMacroStep('release')">Add</button>
+                <button id="btnCancelEdit_release" class="secondary" style="display:none; background:#888;" onclick="cancelEdit('release')">Cancel</button>
             </div>
 
         </div>
@@ -164,6 +189,19 @@
         const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
         const CHAR_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
         let device, characteristic;
+        
+        // Key Mapping
+        const KEY_MAP = {
+            "Control": 128, "Shift": 129, "Alt": 130, "Meta": 131,
+            "Enter": 176, "Escape": 177, "Backspace": 178, "Tab": 179,
+            "ArrowUp": 218, "ArrowDown": 217, "ArrowLeft": 216, "ArrowRight": 215,
+            "PageUp": 211, "PageDown": 214, "Home": 210, "End": 213,
+            "Insert": 209, "Delete": 212, "F1": 194, "F2": 195, "F3": 196,
+            "F4": 197, "F5": 198, "F6": 199, "F7": 200, "F8": 201, "F9": 202,
+            "F10": 203, "F11": 204, "F12": 205
+        };
+
+        const KEY_NAMES = Object.fromEntries(Object.entries(KEY_MAP).map(([k, v]) => [v, k]));
 
         // State
         let config = {
@@ -193,11 +231,9 @@
         }
 
         function getKeyName(code) {
-            if(code === 128) return "Ctrl";
-            if(code === 129) return "Shift";
-            if(code === 130) return "Alt";
-            if(code === 131) return "Win";
-            return "Key: " + String.fromCharCode(code);
+            if(KEY_NAMES[code]) return KEY_NAMES[code];
+            if(code >= 32 && code <= 126) return "Key: " + String.fromCharCode(code);
+            return "Code: " + code;
         }
 
         function getActionName(act) {
@@ -207,6 +243,8 @@
             if(act === 4) return "Up";
             return "?";
         }
+
+        let editState = { press: -1, release: -1 };
 
         function renderLists() {
             // Momentary
@@ -231,7 +269,23 @@
                     let valStr = step.action == 2 ? `${step.val}ms` : getKeyName(step.val);
                     let icon = step.action == 2 ? '⏱️' : '⌨️';
                     
-                    div.innerHTML = `<span>${icon} <b>${act}</b> ${valStr}</span> <button class="danger" onclick="removeMacro('${targetName}', ${idx})">×</button>`;
+                    // Highlight if editing
+                    if (editState[targetName] === idx) {
+                        div.style.border = "2px solid #007acc";
+                        div.style.backgroundColor = "#eeffff";
+                    }
+
+                    div.innerHTML = `
+                        <div style="flex-grow:1; display:flex; align-items:center; gap:5px;">
+                            <span>${icon} <b>${act}</b> ${valStr}</span>
+                        </div>
+                        <div style="display:flex; gap:2px;">
+                             <button class="secondary" style="padding:2px 6px;" title="Move Up" onclick="moveMacro('${targetName}', ${idx}, -1)">↑</button>
+                             <button class="secondary" style="padding:2px 6px;" title="Move Down" onclick="moveMacro('${targetName}', ${idx}, 1)">↓</button>
+                             <button class="secondary" style="padding:2px 6px;" title="Edit" onclick="editMacro('${targetName}', ${idx})">✎</button>
+                             <button class="danger" style="padding:2px 8px;" title="Remove" onclick="removeMacro('${targetName}', ${idx})">×</button>
+                        </div>
+                    `;
                     el.appendChild(div);
                 });
             };
@@ -278,7 +332,165 @@
         document.getElementById('m0_type').addEventListener('change', (e) => {
             document.getElementById('m0_input_char').style.display = e.target.value === 'char' ? 'block' : 'none';
             document.getElementById('m0_input_mod').style.display = e.target.value === 'mod' ? 'block' : 'none';
+            document.getElementById('m0_input_code').style.display = e.target.value === 'code' ? 'block' : 'none';
         });
+
+        // --- Recorders ---
+        
+        // Mode 0 Combo
+        let recordingCombo = false;
+        
+        document.getElementById('btnRecordCombo').addEventListener('click', () => {
+             const btn = document.getElementById('btnRecordCombo');
+             if(!recordingCombo) {
+                 recordingCombo = true;
+                 config.momentaryKeys = []; // Clear
+                 renderLists();
+                 btn.textContent = "🛑 Stop Recording";
+                 btn.className = "danger";
+                 window.addEventListener('keydown', onComboKey);
+             } else {
+                 stopComboRecord();
+             }
+        });
+
+        function stopComboRecord() {
+             const btn = document.getElementById('btnRecordCombo');
+             recordingCombo = false;
+             btn.textContent = "🔴 Record Combo";
+             btn.className = ""; 
+             window.removeEventListener('keydown', onComboKey);
+        }
+
+        function onComboKey(e) {
+            e.preventDefault();
+            const code = mapEventToCode(e);
+            if(code && !config.momentaryKeys.includes(code)) {
+                config.momentaryKeys.push(code);
+                renderLists();
+            }
+        }
+        
+        // Mode 1 Live Macro
+        let recordingMacro = null; // 'press' or 'release'
+        let lastMacroTime = 0;
+
+        function toggleMacroRecord(target) {
+            if(recordingMacro === target) {
+                stopMacroRecord();
+            } else {
+                if(recordingMacro) stopMacroRecord(); // stop other
+                startMacroRecord(target);
+            }
+        }
+
+        function startMacroRecord(target) {
+            recordingMacro = target;
+            const btn = document.getElementById('btnRecordMacro_' + target);
+            btn.textContent = "🛑 Stop";
+            btn.classList.add('danger');
+            btn.classList.remove('secondary');
+            
+            // Clear existing
+            if(target === 'press') config.macroPress = [];
+            else config.macroRelease = [];
+            
+            renderLists();
+            
+            lastMacroTime = Date.now();
+            window.addEventListener('keydown', onMacroKeyDown);
+            window.addEventListener('keyup', onMacroKeyUp);
+        }
+
+        function stopMacroRecord() {
+            if(!recordingMacro) return;
+            const target = recordingMacro;
+            const btn = document.getElementById('btnRecordMacro_' + target);
+            btn.textContent = "🔴 Record Live";
+            btn.classList.add('secondary');
+            btn.classList.remove('danger');
+            
+            window.removeEventListener('keydown', onMacroKeyDown);
+            window.removeEventListener('keyup', onMacroKeyUp);
+            recordingMacro = null;
+        }
+
+        function onMacroKeyDown(e) {
+            e.preventDefault();
+            if (e.repeat) return;
+            handleMacroEvent(3, e); // 3=PRESS
+        }
+
+        function onMacroKeyUp(e) {
+            e.preventDefault();
+            handleMacroEvent(4, e); // 4=RELEASE
+        }
+
+        function handleMacroEvent(action, e) {
+            const code = mapEventToCode(e);
+            if (!code) return;
+
+            const now = Date.now();
+            const dt = now - lastMacroTime;
+            lastMacroTime = now;
+
+            const list = recordingMacro === 'press' ? config.macroPress : config.macroRelease;
+
+            // Add Delay (min 10ms to avoid noise), but skip if it's the very first item
+            if (dt > 15 && list.length > 0) {
+                // Round to nearest 10ms for cleanness
+                const delayVal = Math.round(dt / 10) * 10;
+                if(delayVal > 0) list.push({ action: 2, val: delayVal });
+            }
+            
+            list.push({ action: action, val: code });
+            renderLists();
+        }
+
+        document.getElementById('btnRecordMacro_press').addEventListener('click', () => toggleMacroRecord('press'));
+        document.getElementById('btnRecordMacro_release').addEventListener('click', () => toggleMacroRecord('release'));
+
+
+        function mapEventToCode(e) {
+            if(KEY_MAP[e.key]) return KEY_MAP[e.key];
+            if(e.key.length === 1) return e.key.charCodeAt(0);
+            return null;
+        }
+
+        // Detect Key for Adders
+        document.querySelectorAll('.btn-detect').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const container = e.target.closest('.step-adder');
+                const origText = e.target.textContent;
+                e.target.textContent = "⌨️";
+                
+                const handler = (evt) => {
+                    evt.preventDefault();
+                    const code = mapEventToCode(evt);
+                    if(code) {
+                        // Fill inputs
+                        const sel = container.querySelector('.key-type-sel');
+                        if (code >= 128 && code <= 135) {
+                            sel.value = 'mod';
+                            container.querySelector('.input-mod').value = code;
+                        } else if (code >= 32 && code <= 126) {
+                            sel.value = 'char';
+                            container.querySelector('.input-char').value = String.fromCharCode(code);
+                        } else {
+                            sel.value = 'code';
+                            container.querySelector('.input-code').value = code;
+                        }
+                        
+                        // Valid event to trigger visibility update
+                        sel.dispatchEvent(new Event('change')); 
+                    }
+                    window.removeEventListener('keydown', handler);
+                    e.target.textContent = origText;
+                };
+                window.addEventListener('keydown', handler);
+            });
+        });
+
 
         // --- Add Logic ---
 
@@ -287,6 +499,8 @@
              let val = 0;
              if(type === 'mod') {
                  val = parseInt(document.getElementById('m0_mod').value);
+             } else if (type === 'code') {
+                 val = parseInt(document.getElementById('m0_code').value);
              } else {
                  const char = document.getElementById('m0_char').value;
                  if(!char) return;
@@ -296,6 +510,27 @@
              config.momentaryKeys.push(val);
              renderLists();
         });
+        
+        // Init Adders (Updated to support 'code')
+        function setupAdder(idPrefix) {
+            const container = document.getElementById(idPrefix);
+            const typeSel = container.querySelector('.type-sel');
+            const keyTypeSel = container.querySelector('.key-type-sel');
+            
+            const updateVis = () => {
+                 const isDelay = typeSel.value == '2';
+                 container.querySelector('.val-key').style.display = isDelay ? 'none' : 'inline-block';
+                 container.querySelector('.val-delay').style.display = isDelay ? 'inline-block' : 'none';
+                 
+                 const kt = keyTypeSel.value;
+                 container.querySelector('.input-char').style.display = kt === 'char' ? 'inline-block' : 'none';
+                 container.querySelector('.input-mod').style.display = kt === 'mod' ? 'inline-block' : 'none';
+                 container.querySelector('.input-code').style.display = kt === 'code' ? 'inline-block' : 'none';
+            };
+
+            typeSel.addEventListener('change', updateVis);
+            keyTypeSel.addEventListener('change', updateVis);
+        }
 
         window.addMacroStep = (target) => {
             const container = document.getElementById(target === 'press' ? 'adder_press' : 'adder_release');
@@ -308,6 +543,8 @@
                 const keyType = container.querySelector('.key-type-sel').value;
                 if(keyType === 'mod') {
                     val = parseInt(container.querySelector('.input-mod').value);
+                } else if(keyType === 'code') {
+                    val = parseInt(container.querySelector('.input-code').value);
                 } else {
                     const charInput = container.querySelector('.input-char');
                     if(!charInput.value) return;
@@ -317,13 +554,122 @@
             }
 
             const step = { action: type, val: val };
-            if (target === 'press') config.macroPress.push(step);
-            else config.macroRelease.push(step);
+            
+            if (editState[target] !== -1) {
+                // Update
+                const idx = editState[target];
+                if (target === 'press') config.macroPress[idx] = step;
+                else config.macroRelease[idx] = step;
+                editState[target] = -1;
+                window.cancelEdit(target);
+            } else {
+                // Add
+                if (target === 'press') config.macroPress.push(step);
+                else config.macroRelease.push(step);
+            }
+            renderLists();
+        }
+
+        window.moveMacro = (target, idx, dir) => {
+            const list = target === 'press' ? config.macroPress : config.macroRelease;
+            const newIdx = idx + dir;
+            if(newIdx < 0 || newIdx >= list.length) return;
+            
+            [list[idx], list[newIdx]] = [list[newIdx], list[idx]];
+            
+            // Follow edit focus
+            if(editState[target] === idx) editState[target] = newIdx;
+            else if(editState[target] === newIdx) editState[target] = idx;
+            
+            renderLists();
+        }
+        
+        window.editMacro = (target, idx) => {
+            const list = target === 'press' ? config.macroPress : config.macroRelease;
+            const step = list[idx];
+            const container = document.getElementById(target === 'press' ? 'adder_press' : 'adder_release');
+            
+            editState[target] = idx;
+            
+            // Populate
+            const typeSel = container.querySelector('.type-sel');
+            typeSel.value = step.action;
+            typeSel.dispatchEvent(new Event('change'));
+            
+            if(step.action === 2) { 
+                container.querySelector('.input-ms').value = step.val;
+            } else {
+                const keyTypeSel = container.querySelector('.key-type-sel');
+                if (step.val >= 128 && step.val <= 135) {
+                    keyTypeSel.value = 'mod';
+                    container.querySelector('.input-mod').value = step.val;
+                } else if (step.val >= 32 && step.val <= 126) {
+                    keyTypeSel.value = 'char';
+                    container.querySelector('.input-char').value = String.fromCharCode(step.val);
+                } else {
+                    keyTypeSel.value = 'code';
+                    container.querySelector('.input-code').value = step.val;
+                }
+                keyTypeSel.dispatchEvent(new Event('change'));
+            }
+            
+            // UI
+            const btn = document.getElementById('btnAddStep_' + target);
+            btn.textContent = "Update Step " + (idx+1);
+            btn.classList.add('primary');
+            btn.classList.remove('secondary');
+            
+            document.getElementById('btnCancelEdit_' + target).style.display = "inline-block";
+            
+            renderLists();
+            
+            // Scroll to adder
+            container.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        
+        window.cancelEdit = (target) => {
+            editState[target] = -1;
+            const btn = document.getElementById('btnAddStep_' + target);
+            btn.textContent = "Add";
+            btn.classList.remove('primary');
+            btn.classList.add('secondary');
+            
+            document.getElementById('btnCancelEdit_' + target).style.display = "none";
             renderLists();
         }
 
 
         // --- Bluetooth Logic ---
+
+        // Check for known devices on load
+        window.addEventListener('load', async () => {
+            if(!navigator.bluetooth || !navigator.bluetooth.getDevices) return;
+            try {
+                const startDevices = await navigator.bluetooth.getDevices();
+                updateKnownDevices(startDevices);
+            } catch(e) { console.log("Permitted devices not supported."); }
+        });
+
+        function updateKnownDevices(devices) {
+            const list = document.getElementById('knownList');
+            const container = document.getElementById('knownDevices');
+            
+            // Filter only our devices
+            const myDevices = devices.filter(d => d.name && d.name.startsWith('Foot'));
+            
+            if(myDevices.length > 0) {
+                container.style.display = 'block';
+                list.innerHTML = '';
+                myDevices.forEach(d => {
+                    const btn = document.createElement('button');
+                    btn.className = 'secondary';
+                    btn.style.width = '100%';
+                    btn.innerHTML = `Reconnect: <b>${d.name}</b>`;
+                    btn.onclick = () => connectToDevice(d);
+                    list.appendChild(btn);
+                });
+            }
+        }
 
         function showStatus(msg, type) {
             const s = document.getElementById('status');
@@ -332,47 +678,104 @@
             if(type === 'success') setTimeout(() => { s.style.display = 'none'; }, 3000);
         }
 
+        async function connectToDevice(d) {
+            try {
+                device = d;
+                showStatus('Connecting to ' + device.name + '...', 'success');
+                
+                device.addEventListener('gattserverdisconnected', onDisconnected);
+                
+                // If the device is not connected, we need to connect
+                const server = await device.gatt.connect();
+                
+                setupServices(server);
+            } catch (err) {
+                 console.error(err);
+                 showStatus('Connection Failed: ' + err.message, 'error');
+            }
+        }
+
+        async function setupServices(server) {
+            // Get Config Service
+            const service = await server.getPrimaryService(SERVICE_UUID);
+            characteristic = await service.getCharacteristic(CHAR_UUID);
+
+            // Get Battery Service (if available)
+            try {
+                const batService = await server.getPrimaryService('battery_service');
+                batteryChar = await batService.getCharacteristic('battery_level');
+                startBatteryPolling();
+                document.getElementById('batteryDisplay').style.display = "block";
+            } catch(e) {
+                console.log("Battery service not found", e);
+            }
+
+            // Enable Panel
+            document.getElementById('configPanel').style.opacity = "1";
+            document.getElementById('configPanel').style.pointerEvents = "all";
+            
+            // Swap Buttons
+            document.getElementById('btnConnect').style.display = "none";
+            document.getElementById('btnDisconnect').style.display = "block";
+            document.getElementById('knownDevices').style.display = 'none';
+
+            // Parse Existing Config
+            const val = await characteristic.readValue();
+            const str = new TextDecoder().decode(val);
+            parseReadString(str);
+            
+            showStatus('Connected!', 'success');
+        }
+
         document.getElementById('btnConnect').addEventListener('click', async () => {
             try {
                 showStatus('Searching...', 'success');
-                device = await navigator.bluetooth.requestDevice({
-                    acceptAllDevices: true,
+                const d = await navigator.bluetooth.requestDevice({
+                    filters: [{ namePrefix: 'Foot' }],
                     optionalServices: [SERVICE_UUID, 'battery_service']
                 });
-
-                const server = await device.gatt.connect();
-                
-                // Get Config Service
-                const service = await server.getPrimaryService(SERVICE_UUID);
-                characteristic = await service.getCharacteristic(CHAR_UUID);
-
-                // Get Battery Service (if available)
-                try {
-                    const batService = await server.getPrimaryService('battery_service');
-                    batteryChar = await batService.getCharacteristic('battery_level');
-                    startBatteryPolling();
-                    document.getElementById('batteryDisplay').style.display = "block";
-                } catch(e) {
-                    console.log("Battery service not found", e);
-                }
-
-                // Enable Panel
-                document.getElementById('configPanel').style.opacity = "1";
-                document.getElementById('configPanel').style.pointerEvents = "all";
-                document.getElementById('btnConnect').textContent = "Connected";
-                document.getElementById('btnConnect').disabled = true;
-
-                // Parse Existing Config
-                const val = await characteristic.readValue();
-                const str = new TextDecoder().decode(val);
-                parseReadString(str);
-                
-                showStatus('Connected!', 'success');
+                connectToDevice(d);
             } catch (err) {
                 console.error(err);
-                showStatus('Connection Failed: ' + err.message, 'error');
+                if(err.code !== 20) showStatus('Connection Failed: ' + err.message, 'error'); // Ignore User Cancelled
             }
         });
+
+        document.getElementById('btnDisconnect').addEventListener('click', () => {
+             if(device && device.gatt.connected) {
+                 device.gatt.disconnect();
+                 // onDisconnected will be called by event listener
+             } else {
+                 onDisconnected();
+             }
+        });
+
+        function onDisconnected(event) {
+            console.log('Device Disconnected');
+            showStatus('Device Disconnected', 'error');
+            
+            // Reset UI
+            document.getElementById('configPanel').style.opacity = "0.5";
+            document.getElementById('configPanel').style.pointerEvents = "none";
+            
+            document.getElementById('btnConnect').style.display = "block";
+            document.getElementById('btnDisconnect').style.display = "none";
+            
+            document.getElementById('batteryDisplay').style.display = "none";
+            
+            // Refresh Known List
+            
+                        if(navigator.bluetooth && navigator.bluetooth.getDevices) {
+                navigator.bluetooth.getDevices().then(updateKnownDevices);
+            }
+document.getElementById('btnConnect').disabled = false;
+            document.getElementById('batteryDisplay').style.display = "none";
+            
+            // Clear vars
+            device = null;
+            characteristic = null;
+            batteryChar = null;
+        }
 
         async function startBatteryPolling() {
             const updateBat = async () => {

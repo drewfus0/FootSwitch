@@ -105,14 +105,17 @@ private:
 public:
   ConfigKeyboard(std::string name = "FootSwitch", std::string manufacturer = "DIY", uint8_t batteryLevel = 100) 
     : BleKeyboard(name, manufacturer, batteryLevel) {
-      preferences.begin("footswitch", true);
-      mode = preferences.getUChar("mode", 0);
-      payload1 = preferences.getString("pl1", "");
-      payload2 = preferences.getString("pl2", "");
-      preferences.end();
   }
 
   void begin() {
+    // Load config from NVS (Safe to do in begin/setup)
+    preferences.begin("footswitch", true);
+    mode = preferences.getUChar("mode", 0);
+    payload1 = preferences.getString("pl1", "");
+    payload2 = preferences.getString("pl2", "");
+    preferences.end();
+    Serial.printf("Config Loaded from NVS -> Mode: %d, PL1 Len: %d\n", mode, payload1.length());
+
     Serial.println("ConfigKeyboard::begin() called");
     BleKeyboard::begin();
     
