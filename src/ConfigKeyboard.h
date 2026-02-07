@@ -208,9 +208,18 @@ public:
     Serial.println("ConfigKeyboard::begin() called");
     BleKeyboard::begin();
     
+    // Advertising
+    // Wait for onStarted to add service UUID?
+    // BleKeyboard::begin() calls onStarted() internally BEFORE starting advertising.
+    // However, it starts advertising with HID UUIDs.
+    // We want to update it.
+    
     BLEAdvertising* pAdvertising = BLEDevice::getAdvertising();
     pAdvertising->stop();
+    delay(10);
     pAdvertising->setScanResponse(true);
+    pAdvertising->setMinPreferred(0x06); // 7.5ms
+    pAdvertising->setMaxPreferred(0x12); // 22.5ms
     pAdvertising->start();
   }
   
@@ -233,7 +242,6 @@ public:
 protected:
   void onConnect(BLEServer* pServer) override {
     BleKeyboard::onConnect(pServer); 
-    pServer->getAdvertising()->start();
   }
 
   void onStarted(BLEServer *pServer) override {

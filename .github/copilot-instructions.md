@@ -1,55 +1,74 @@
 # FootSwitch Project Instructions
 
 ## Project Overview
-This project builds a configurable Bluetooth Low Energy (BLE) FootSwitch using an ESP32 (Lolin D32 Pro) and a companion Web Bluetooth configuration app.
+This project builds a configurable, **Multi-Switch** Bluetooth Low Energy (BLE) FootSwitch using an ESP32 (Lolin D32 Pro) and a companion Web Bluetooth configuration app.
 
 ### Architecture
-- **Firmware**: PlatformIO C++ project using the Arduino framework. Acts as a composite BLE device:
-  - **HID Device**: Standard BLE Keyboard for sending keystrokes.
-  - **GATT Server**: Custom service for receiving configuration data from the web app.
-- **Web App**: A single-file HTML/JS application (`webapp/index.html`) using the Web Bluetooth API to configure the device wirelessly.
+- **Firmware**: PlatformIO C++ project. Acts as a composite BLE device:
+  - **HID Device**: Standard BLE Keyboard.
+  - **GATT Server**: Custom service for configuring multiple switches dynamically.
+- **Web App**: A "Manager" dashboard (`webapp/index.html`) to add, configure, and remove switches on different GPIO pins.
 
 ## Development Environment
-- **Platform**: PlatformIO (VS Code Extension)
+- **Platform**: PlatformIO
 - **Framework**: Arduino
-- **Board**: `lolin_d32_pro` (Check `platformio.ini`)
+- **Board**: `lolin_d32_pro`
 - **Key Dependencies**: `ESP32 BLE Keyboard`
 
 ## Build & Deploy
-- **Build Firmware**: `pio run`
-- **Upload Firmware**: `pio run -t upload`
-- **Monitor Serial**: `pio device monitor` (Baud: 115200)
-- **Run Web App**: Open `webapp/index.html` in a BLE-supported browser (Chrome, Edge, Bluefy). No build step required.
+- **Build**: `pio run`
+- **Upload**: `pio run -t upload`
+- **Monitor**: `pio device monitor` (115200)
+- **Web App**: Open `webapp/index.html` in Chrome/Edge.
 
 ## Codebase Map
 
 ### Firmware (`src/`)
-- **`main.cpp`**:
-  - Handles physical IO (Pin 23).
-  - Implements debounce logic (50ms).
-  - Triggers press/release events on the `kb` object.
+- **`Switch.h / .cpp`**:
+  - Represents a single physical switch.
+  - Handles `pinMode`, `digitalRead`, debounce (50ms).
+  - Executes Macros/Combos via the parent `BleKeyboard` reference.
 - **`ConfigKeyboard.h`**:
-  - Inherits from `BleKeyboard`.
-  - Manages **Preferences** (NVS) to save keys/macros across reboots.
-  - **mode 0 (Momentary)**: Simple key combos.
-  - **mode 1 (Macro)**: Complex sequences (Tap, Delay, Press, Release).
-  - **Data Protocol**: Parses custom string payload `"Action,Value,..."`.
+  - **Manager Class**: Inherits from `BleKeyboard`.
+  - Holds a `std::vector<Switch*>` of active switches.
+  - **NVS Storage**: Manages indexed preferences (`sw0_pin`, `sw0_mode`...).
+  - **BLE Protocol**: Parses commands to Add/Delete/Config switches.
+- **`main.cpp`**:
+  - Simple loop calls `kb.tick()` to update all switches.
+  - Handles Battery monitoring (Pin 35).
 
 ### Configuration (`webapp/`)
 - **`index.html`**:
-  - Connects via `navigator.bluetooth`.
-  - Service UUID: `4fafc201-1fb5-459e-8fcc-c5c9c331914b`
-  - Characteristic UUID: `beb5483e-36e1-4688-b7f5-ea07361b26a8`
-  - Encodes UI selections into the custom protocol string before writing.
+  - **Dashboard**: Lists active switches + Add/Clear buttons.
+  - **Editor**: Configures Mode 0 (Momentary) or Mode 1 (Macro) for specific switches.
+  - **Protocol**:
+    - `ADD:PIN` : Add new switch.
+    - `CFG:ID:PIN:MODE#P1#P2` : Configure switch.
+    - `CLR` : Factory reset (remove all).
+
+## Data Protocol
+- **Service UUID**: `4fafc201-1fb5-459e-8fcc-c5c9c331914b`
+- **Char UUID**: `beb5483e-36e1-4688-b7f5-ea07361b26a8`
+- **Storage (NVS)**:
+  - `count`: Number of switches.
+  - `sw{i}_pin`: GPIO Pin.
+  - `sw{i}_mode`: 0=Momentary, 1=Macro.
+  - `sw{i}_pl1`: Payload 1 (Combos/Press Seq).
+  - `sw{i}_pl2`: Payload 2 (Release Seq).
 
 ## Development Patterns
-1. **Header-Only Logic**: Much of the complexity is inline in `ConfigKeyboard.h`. When modifying logic, check this file first.
-2. **Pull-Down Input**: `SWITCH_PIN` (23) is configured as `INPUT_PULLDOWN`. Ensure hardware places 3.3V on the pin when pressed.
-3. **Macro Parsing**: The macro engine `runSequence()` manually parses a CSV-like string.
-   - Action Codes: 1=TAP, 2=DELAY, 3=PRESS, 4=RELEASE.
-4. **Web Bluetooth**: The web app must challenge the user for device selection. It cannot auto-connect silently.
+1. **Dynamic Instantiation**: Switches are created at runtime based on NVS config or BLE commands.
+2. **Safe Pins**: Use ESP32 pins with internal Pull-Up/Down capabilities (Avoid 34-39).
+   - Recommended: 4, 13-19, 21-23, 25-27, 32-33.
+3. **Macro Logic**: 
+   - Operations: 1=TAP, 2=DELAY, 3=PRESS, 4=RELEASE.
+   - Format: CSV string parsed by `Switch::runSequence`.
+4. **Bluetooth Stability**:
+   - Advertising is **stopped** upon connection to prevent "Leaking Connection" errors in BlueZ.
+   - Host OS caching (GATT Table) often requires **"Forgetting"** the device after firmware updates.
 
 ## Troubleshooting
-- **Device Not Found**: Ensure no other device is connected. BLE allows only one concurrent central connection.
-- **Serial Output**: Use `Serial.printf` for debugging. Output is visible only when USB is connected.
-- **Configuration Storage**: Settings are stored in NVS. If fields are corrupt, consider adding a way to clear NVS `preferences.clear()`.
+- **"Leaking Connection" / "Services not resolved"**: The OS has a stale cache or the device advertised while connected. **Forget** the device in OS settings and re-pair.
+- **Web Bluetooth on Linux**:
+  - **Chrome**: Enable `#enable-experimental-web-platform-features`.
+  - **Snap/Flatpak**: Sandboxing blocks Bluetooth. Use `.deb` install or grant permissions (`snap connect chromium:bluez`).
