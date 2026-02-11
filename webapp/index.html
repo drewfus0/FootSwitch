@@ -331,8 +331,30 @@
         });
 
         document.getElementById('btnAddDialog').addEventListener('click', () => {
+             updatePinSelect();
              document.getElementById('addModal').classList.remove('hidden');
         });
+
+        function updatePinSelect() {
+            const sel = document.getElementById('selPin');
+            const usedPins = activeSwitches.map(s => parseInt(s.pin));
+            
+            for (let i = 0; i < sel.options.length; i++) {
+                const opt = sel.options[i];
+                if (!opt.hasAttribute('data-original-text')) {
+                    opt.setAttribute('data-original-text', opt.text);
+                }
+                
+                const originalText = opt.getAttribute('data-original-text');
+                const pinVal = parseInt(opt.value);
+                
+                if (usedPins.includes(pinVal)) {
+                    opt.text = originalText + " (Active)";
+                } else {
+                    opt.text = originalText;
+                }
+            }
+        }
 
         document.getElementById('btnConfirmAdd').addEventListener('click', async () => {
              const pin = document.getElementById('selPin').value;
