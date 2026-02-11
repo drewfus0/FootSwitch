@@ -213,7 +213,7 @@ public:
     // BleKeyboard::begin() calls onStarted() internally BEFORE starting advertising.
     // However, it starts advertising with HID UUIDs.
     // We want to update it.
-    
+    Serial.println("Updating BLE Advertising...");
     BLEAdvertising* pAdvertising = BLEDevice::getAdvertising();
     pAdvertising->stop();
     delay(10);
@@ -241,10 +241,13 @@ public:
 
 protected:
   void onConnect(BLEServer* pServer) override {
+    Serial.println("Client Connected");
     BleKeyboard::onConnect(pServer); 
+    pServer->getAdvertising()->start();
   }
 
   void onStarted(BLEServer *pServer) override {
+    Serial.println("BLE Server Started");
     configService = pServer->createService(CONFIG_SERVICE_UUID);
     configCharacteristic = configService->createCharacteristic(
         CONFIG_CHARACTERISTIC_UUID,
@@ -257,7 +260,7 @@ protected:
     
     configCharacteristic->setCallbacks(new ConfigCallback(this));
     configService->start();
-    
+    Serial.println("Updating BLE Advertising...(2)");
     BLEAdvertising* pAdvertising = pServer->getAdvertising();
     pAdvertising->addServiceUUID(CONFIG_SERVICE_UUID);
   }
