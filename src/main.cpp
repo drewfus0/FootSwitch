@@ -10,15 +10,24 @@ ConfigKeyboard kb("FootSwitch", "DIY", 100);
 unsigned long lastBatteryUpdate = 0;
 
 void updateBattery() {
-  uint32_t raw = analogRead(BAT_PIN);
-  float voltage = (raw / 4095.0) * 3.3 * 2.0; // x2 for voltage divider
+  // Use analogReadMilliVolts for better accuracy with ESP32 ADC factory calibration
+  uint32_t mv = analogReadMilliVolts(BAT_PIN);
+  
+  // The Lolin D32 Pro uses a 100k/100k voltage divider.
+  // However, the high impedance (100k) combined with the ESP32 ADC input impedance
+  // often results in a voltage drop during sampling, reading lower than actual.
+  // A Compensation Factor of ~1.1 is often needed if reading is too low.
+  // (e.g. Reading 3.9V when battery is 4.2V -> 4.2/3.9 = 1.077)
+  float compensationFactor = 1.08; 
+  
+  float voltage = (mv * 2.0 * compensationFactor) / 1000.0;
   
   // Simple map: 3.2V (0%) to 4.2V (100%)
   int percentage = (int)((voltage - 3.2) * 100.0);
   if (percentage < 0) percentage = 0;
   if (percentage > 100) percentage = 100;
   
-  Serial.printf("Battery Voltage: %.2fV -> %d%%\n", voltage, percentage);
+  Serial.printf("Battery Voltage: %.2fV (raw: %d) -> %d%%\n", voltage, mv, percentage);
   kb.setBatteryLevel(percentage);
 }
 

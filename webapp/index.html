@@ -50,9 +50,10 @@
     <!-- Connection Panel -->
     <div class="card" id="connPanel">
         <h3>Connection</h3>
-        <button id="btnConnect">Find Device</button>
+        <button id="btnConnect" style="margin-bottom: 10px;">Find Device</button>
         <button id="btnDisconnect" class="danger hidden">Disconnect</button>
-        <div id="statusDisplay" style="margin-top:10px; color:#666;">Not Connected</div>
+        <div id="statusDisplay" style="margin-left: 10px;color:#666;display: inline;">Not Connected</div>
+        <div id="batteryLevel" class="hidden" style="margin-left:10px; font-weight:bold; color:#28a745; display: inline;"></div>
     </div>
 
     <!-- Dashboard (Switch List) -->
@@ -392,16 +393,19 @@
             try {
                 const d = await navigator.bluetooth.requestDevice({
                     filters: [{ namePrefix: 'Foot' }],
-                    optionalServices: [SERVICE_UUID]
+                    optionalServices: [SERVICE_UUID, 'battery_service']
                 });
                 device = d;
                 device.addEventListener('gattserverdisconnected', onDisconnect);
                 const server = await d.gatt.connect();
+                document.getElementById('displayPin').innerHTML = "Connecting... <span class='time-spinner'></span>";
                 await setupService(server);
                 
                 document.getElementById('btnConnect').classList.add('hidden');
                 document.getElementById('btnDisconnect').classList.remove('hidden');
-                document.getElementById('statusDisplay').textContent = "Connected to " + d.name;
+                document.getElementById('batteryLevel').classList.remove('hidden');
+                document.getElementById('statusDisplay').innerHTML = "Connected to " + d.name 
+                //document.getElementById('statusDisplay').innerHTML = "" + battLevelChar;
                 
                 readDeviceConfig();
                 
@@ -433,6 +437,34 @@
                      setTimeout(readDeviceConfig, 200);
                  }
             });
+
+            // Battery Service Connection
+            try {
+                const battService = await server.getPrimaryService('battery_service');
+                const battLevelChar = await battService.getCharacteristic('battery_level');
+                
+                const handleBattery = (event) => {
+                    const level = event.target.value.getUint8(0);
+                    const el = document.getElementById('batteryLevel');
+                    if(el) {
+                        el.textContent = " 🔋 " + level + "%";
+                        if(level < 20) el.style.color = '#dc3545'; // red
+                        else if(level < 50) el.style.color = '#ffc107'; // yellow
+                        else el.style.color = '#28a745'; // green
+                    }
+                };
+
+                // Read Initial
+                const initialVal = await battLevelChar.readValue();
+                handleBattery({target: {value: initialVal}});
+
+                // Subscribe
+                await battLevelChar.startNotifications();
+                battLevelChar.addEventListener('characteristicvaluechanged', handleBattery);
+                
+            } catch(e) {
+                console.log("Battery service not available", e);
+            }
         }
         
         async function sendCommand(str) {
@@ -516,6 +548,7 @@
             document.getElementById('statusDisplay').textContent = "Not Connected";
             document.getElementById('btnConnect').classList.remove('hidden');
             document.getElementById('btnDisconnect').classList.add('hidden');
+            document.getElementById('batteryLevel').classList.add('hidden');
             device = null;
         }
 
