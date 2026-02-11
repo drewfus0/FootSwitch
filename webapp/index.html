@@ -79,6 +79,10 @@
         </div>
 
         <div class="row">
+             <label>Name: <input type="text" id="configName" placeholder="My Switch" maxlength="12"></label>
+        </div>
+
+        <div class="row">
              <label>Current Pin: <b id="displayPin">--</b></label>
         </div>
         
@@ -96,6 +100,7 @@
                 <select id="m0_type">
                     <option value="char">Character</option>
                     <option value="mod">Modifier</option>
+                    <option value="media">Media</option>
                     <option value="code">Code</option>
                 </select>
                 <div id="m0_input_char">
@@ -107,6 +112,18 @@
                         <option value="129">Shift</option>
                         <option value="130">Alt</option>
                         <option value="131">Meta</option>
+                    </select>
+                </div>
+                <div id="m0_input_media" style="display:none;">
+                    <select id="m0_media">
+                        <option value="508">Back</option>
+                        <option value="504">Play/Pause</option>
+                        <option value="501">Next Track</option>
+                        <option value="502">Prev Track</option>
+                        <option value="506">Vol+</option>
+                        <option value="507">Vol-</option>
+                        <option value="505">Mute</option>
+                        <option value="503">Stop</option>
                     </select>
                 </div>
                 <div id="m0_input_code" style="display:none;">
@@ -130,9 +147,19 @@
                 <!-- Simplified for brevity, same structure as old UI -->
                 <select class="type-sel"><option value="1">Tap</option><option value="3">Press</option><option value="4">Release</option><option value="2">Delay</option></select>
                 <span class="val-key">
-                    <select class="key-type-sel"><option value="char">Char</option><option value="mod">Mod</option><option value="code">Code</option></select>
+                    <select class="key-type-sel"><option value="char">Char</option><option value="mod">Mod</option><option value="media">Media</option><option value="code">Code</option></select>
                     <input type="text" class="input-char" style="width:40px;">
                     <select class="input-mod hidden"><option value="128">Ctrl</option><option value="129">Shift</option><option value="130">Alt</option><option value="131">Gui</option></select>
+                    <select class="input-media hidden">
+                        <option value="508">Back</option>
+                        <option value="504">Play/Pause</option>
+                        <option value="501">Next</option>
+                        <option value="502">Prev</option>
+                        <option value="506">Vol+</option>
+                        <option value="507">Vol-</option>
+                        <option value="505">Mute</option>
+                        <option value="503">Stop</option>
+                    </select>
                     <input type="number" class="input-code hidden" style="width:50px;">
                 </span>
                 <span class="val-delay hidden"><input type="number" class="input-ms" placeholder="ms" style="width:60px;"></span>
@@ -148,9 +175,19 @@
             <div id="adder_release" class="step-adder">
                 <select class="type-sel"><option value="1">Tap</option><option value="3">Press</option><option value="4">Release</option><option value="2">Delay</option></select>
                 <span class="val-key">
-                    <select class="key-type-sel"><option value="char">Char</option><option value="mod">Mod</option><option value="code">Code</option></select>
+                    <select class="key-type-sel"><option value="char">Char</option><option value="mod">Mod</option><option value="media">Media</option><option value="code">Code</option></select>
                     <input type="text" class="input-char" style="width:40px;">
                     <select class="input-mod hidden"><option value="128">Ctrl</option><option value="129">Shift</option><option value="130">Alt</option><option value="131">Gui</option></select>
+                    <select class="input-media hidden">
+                        <option value="508">Back</option>
+                        <option value="504">Play/Pause</option>
+                        <option value="501">Next</option>
+                        <option value="502">Prev</option>
+                        <option value="506">Vol+</option>
+                        <option value="507">Vol-</option>
+                        <option value="505">Mute</option>
+                        <option value="503">Stop</option>
+                    </select>
                     <input type="number" class="input-code hidden" style="width:50px;">
                 </span>
                 <span class="val-delay hidden"><input type="number" class="input-ms" placeholder="ms" style="width:60px;"></span>
@@ -268,6 +305,14 @@
              if (code == 131) return "Gui";
              if (code == 176) return "Enter";
              if (code == 179) return "Tab";
+             if (code == 501) return "Next Track";
+             if (code == 502) return "Prev Track";
+             if (code == 503) return "Stop";
+             if (code == 504) return "Play/Pause";
+             if (code == 505) return "Mute";
+             if (code == 506) return "Vol+";
+             if (code == 507) return "Vol-";
+             if (code == 508) return "WWW Back";
              return `[${code}]`;
         }
         
@@ -284,7 +329,7 @@
                 div.className = 'switch-item';
                 div.innerHTML = `
                     <div>
-                        <div class="switch-meta">Switch ${sw.id}</div>
+                        <div class="switch-meta">${sw.name ? sw.name : ('Switch ' + sw.id)}</div>
                         <div class="switch-pin">Pin: ${sw.pin} | Mode: ${sw.mode==0 ? 'Momentary' : 'Macro'}</div>
                     </div>
                     <div>
@@ -306,6 +351,7 @@
             config.mode = sw.mode;
             document.getElementById('displayPin').textContent = sw.pin;
             document.getElementById('configTitle').textContent = `Configure Switch ${id}`;
+            document.getElementById('configName').value = sw.name || "";
             
             // Wait, we need to parse payloads
             // The switch object might just have the raw string? 
@@ -385,10 +431,10 @@
                 p2 = stepsToStr(config.macroRelease);
             }
             
-            // Format: CFG:INDEX:PIN:MODE#P1#P2
-            // We need to keep the pin same as before
+            // Format: CFG:INDEX:PIN:MODE#P1#P2#NAME
+            const name = document.getElementById('configName').value.replace(/[:#;]/g, '').trim();
             const sw = activeSwitches.find(s => s.id === currentEditId);
-            const cmd = `CFG:${currentEditId}:${sw.pin}:${config.mode}#${p1}#${p2}`;
+            const cmd = `CFG:${currentEditId}:${sw.pin}:${config.mode}#${p1}#${p2}#${name}`;
             
             await sendCommand(cmd);
             
@@ -396,6 +442,7 @@
             sw.mode = config.mode;
             sw.p1 = p1;
             sw.p2 = p2;
+            sw.name = name;
             
             showStatus('Saved!', 'success');
         });
@@ -551,11 +598,14 @@
             
             items.forEach(item => {
                 if(item.startsWith('SW')) {
-                    // SW:0:23
+                    // SW:0:23:Name
                     const parts = item.split(':');
                     const id = parseInt(parts[1]);
                     const pin = parseInt(parts[2]);
-                    newSwitches.push({ id, pin, mode:0, p1:"", p2:"" });
+                    let name = "";
+                    if(parts.length > 3) name = parts.slice(3).join(':');
+                    
+                    newSwitches.push({ id, pin, mode:0, p1:"", p2:"", name });
                 }
             });
             
@@ -587,6 +637,7 @@
              const type = document.getElementById('m0_type').value;
              let val = 0;
              if(type === 'mod') val = parseInt(document.getElementById('m0_mod').value);
+             else if(type === 'media') val = parseInt(document.getElementById('m0_media').value);
              else if (type === 'code') val = parseInt(document.getElementById('m0_code').value);
              else {
                  val = document.getElementById('m0_char').value.charCodeAt(0);
@@ -618,6 +669,7 @@
         m0Type.addEventListener('change', () => {
              const v = m0Type.value;
              document.getElementById('m0_input_char').style.display = v==='char'?'inline-block':'none';
+             document.getElementById('m0_input_media').style.display = v==='media'?'inline-block':'none';
              document.getElementById('m0_input_mod').style.display = v==='mod'?'inline-block':'none';
              document.getElementById('m0_input_code').style.display = v==='code'?'inline-block':'none';
         });
@@ -663,7 +715,8 @@
                  if(type == 2) val = parseInt(container.querySelector('.input-ms').value);
                  else {
                      const ktype = container.querySelector('.key-type-sel').value;
-                     if(ktype=='mod') val = parseInt(container.querySelector('.input-mod').value);
+                     if(ktype=='media') val = parseInt(container.querySelector('.input-media').value);
+                     else if(ktype=='mod') val = parseInt(container.querySelector('.input-mod').value);
                      else if(ktype=='code') val = parseInt(container.querySelector('.input-code').value);
                      else val = container.querySelector('.input-char').value.charCodeAt(0);
                  }
@@ -706,6 +759,7 @@
                  adder.querySelector('.val-delay').classList.toggle('hidden', !isDelay);
                  
                  const kt = adder.querySelector('.key-type-sel').value;
+                 adder.querySelector('.input-media').classList.toggle('hidden', kt!=='media');
                  adder.querySelector('.input-char').classList.toggle('hidden', kt!=='char');
                  adder.querySelector('.input-mod').classList.toggle('hidden', kt!=='mod');
                  adder.querySelector('.input-code').classList.toggle('hidden', kt!=='code');

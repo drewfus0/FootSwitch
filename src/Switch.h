@@ -14,6 +14,7 @@ private:
     uint8_t _mode = 0; // 0 = Momentary, 1 = Macro
     String _payload1 = "";
     String _payload2 = "";
+    String _name = "";
 
     // State
     int _buttonState;
@@ -34,6 +35,8 @@ public:
     void updateConfig(uint8_t mode, String payload1, String payload2);
     void setPin(uint8_t pin);
     uint8_t getPin() const { return _pin; }
+    void setName(String name) { _name = name; }
+    String getName() const { return _name; }
     
     // Actions
     void performPress();

@@ -38,16 +38,20 @@ private:
     sprintf(key, "sw%d_pl2", i);
     String p2 = preferences.getString(key, "");
 
+    sprintf(key, "sw%d_name", i);
+    String name = preferences.getString(key, "");
+
     Switch* s = new Switch(i, this);
     if (pin > 0) s->begin(pin);
     s->updateConfig(m, p1, p2);
+    s->setName(name);
     switches.push_back(s);
     
     Serial.printf("Loaded Switch %d: Pin %d\n", i, pin);
   }
 
   // Save specific switch
-  void saveSwitch(int i, uint8_t pin, uint8_t mode, String p1, String p2) {
+  void saveSwitch(int i, uint8_t pin, uint8_t mode, String p1, String p2, String name) {
     char key[16];
     
     sprintf(key, "sw%d_pin", i);
@@ -61,6 +65,9 @@ private:
 
     sprintf(key, "sw%d_pl2", i);
     preferences.putString(key, p2);
+
+    sprintf(key, "sw%d_name", i);
+    preferences.putString(key, name);
   }
 
   // Parse New Protocol
@@ -76,7 +83,7 @@ private:
             int newIdx = switches.size();
             
             // Save Switch Default
-            saveSwitch(newIdx, pin, 0, "", "");
+            saveSwitch(newIdx, pin, 0, "", "", "");
             // Save New Count
             preferences.putUChar("count", newIdx + 1);
             
@@ -100,7 +107,7 @@ private:
         Serial.println("Cleared All Switches");
     }
     else if (data.startsWith("CFG:")) {
-        // CFG:INDEX:PIN:MODE#PL1#PL2
+        // CFG:INDEX:PIN:MODE#PL1#PL2#NAME
         // Find separators
         int firstColon = 3; // "CFG"
         int secondColon = data.indexOf(':', firstColon + 1); // Index
@@ -110,45 +117,51 @@ private:
             int idx = data.substring(firstColon + 1, secondColon).toInt();
             int pin = data.substring(secondColon + 1, thirdColon).toInt();
             
-            // Mode and Payloads are separated by #
-            // Remaining string starting after thirdColon
+            // Mode and Payloads and Name are separated by #
             String rest = data.substring(thirdColon + 1);
             int hash1 = rest.indexOf('#');
             int hash2 = rest.indexOf('#', hash1 + 1);
+            int hash3 = rest.indexOf('#', hash2 + 1);
             
             uint8_t mode = 0;
-            String pl1 = "", pl2 = "";
+            String pl1 = "", pl2 = "", name = "";
 
             if (hash1 > 0) {
                 mode = rest.substring(0, hash1).toInt();
                 if (hash2 > 0) {
                     pl1 = rest.substring(hash1 + 1, hash2);
-                    pl2 = rest.substring(hash2 + 1);
+                    if (hash3 > 0) {
+                        pl2 = rest.substring(hash2 + 1, hash3);
+                        name = rest.substring(hash3 + 1);
+                    } else {
+                        pl2 = rest.substring(hash2 + 1);
+                    }
                 } else {
                     pl1 = rest.substring(hash1 + 1);
                 }
             } else {
-                // If no hash, maybe just mode?
                 mode = rest.toInt();
             }
 
             if (idx >= 0 && idx < switches.size()) {
-                saveSwitch(idx, pin, mode, pl1, pl2);
+                saveSwitch(idx, pin, mode, pl1, pl2, name);
                 
                 // Live Update
                 switches[idx]->setPin(pin);
                 switches[idx]->updateConfig(mode, pl1, pl2);
+                switches[idx]->setName(name);
                 
                 Serial.printf("Configured Switch %d\n", idx);
             }
             else if (idx == switches.size()) {
                 // Allow implicit Add
-                saveSwitch(idx, pin, mode, pl1, pl2);
+                saveSwitch(idx, pin, mode, pl1, pl2, name);
                 preferences.putUChar("count", idx + 1);
                 
                 Switch* s = new Switch(idx, this);
                 s->begin(pin);
                 s->updateConfig(mode, pl1, pl2);
+                s->setName(name);
                 switches.push_back(s);
             }
         }
@@ -192,7 +205,7 @@ public:
         String p2 = preferences.getString("pl2", "");
         
         preferences.putUChar("count", 1);
-        saveSwitch(0, 23, m, p1, p2); // Default to pin 23
+        saveSwitch(0, 23, m, p1, p2, "Switch 0"); // Default to pin 23
         
         count = 1;
     }
@@ -234,7 +247,7 @@ public:
   String getConfigString() {
       String s = "COUNT:" + String(switches.size()) + ";";
       for(int i=0; i<switches.size(); i++) {
-          s += "SW:" + String(i) + ":" + String(switches[i]->getPin()) + ";";
+          s += "SW:" + String(i) + ":" + String(switches[i]->getPin()) + ":" + switches[i]->getName() + ";";
       }
       return s;
   }
