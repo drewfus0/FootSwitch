@@ -35,6 +35,9 @@ public:
     void updateConfig(uint8_t mode, String payload1, String payload2);
     void setPin(uint8_t pin);
     uint8_t getPin() const { return _pin; }
+    uint8_t getMode() const { return _mode; }
+    String getP1() const { return _payload1; }
+    String getP2() const { return _payload2; }
     void setName(String name) { _name = name; }
     String getName() const { return _name; }
     

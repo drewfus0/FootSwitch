@@ -38,6 +38,9 @@ void setup() {
   // Initialize BLE Keyboard (This loads switches from NVS and configures pins)
   kb.begin();
   
+  // Set larger MTU for delivering long config strings
+  BLEDevice::setMTU(517);
+  
   // Initial battery read
   updateBattery();
 }

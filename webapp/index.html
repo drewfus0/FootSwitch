@@ -75,7 +75,7 @@
     <div class="card hidden" id="configPanel">
         <div class="row">
             <h3 id="configTitle">Configure Switch 0</h3>
-            <button class="secondary sm" id="btnBack">Cancel</button>
+            <!-- Removed Cancel from header -->
         </div>
 
         <div class="row">
@@ -94,6 +94,7 @@
         <!-- MODE 0 UI -->
         <div id="uiMode0">
             <p><strong>Behavior:</strong> Hold keys while pressed.</p>
+            <button id="btnRecordCombo" style="background:#6f42c1;  margin:5px 0 10px 0; width:100%;">🔴 Record Combo from Keyboard</button>
             <div class="list-container" id="listMomentary"></div>
             
             <div class="step-adder">
@@ -131,7 +132,6 @@
                 </div>
                 <button class="secondary" id="btnAddKey">Add Key</button>
             </div>
-            <button id="btnRecordCombo" style="background:#6f42c1; margin-top:10px;">🔴 Record Combo from Keyboard</button>
         </div>
 
         <!-- MODE 1 UI -->
@@ -140,6 +140,7 @@
             
             <!-- PRESS SEQUENCE -->
             <div class="row"><h4 style="margin:0;">Sequence A (Press)</h4></div>
+            <button id="btnRecordMacroPress" style="background:#6f42c1; margin:5px 0 10px 0; width:100%;">🔴 Record Combo for Sequence A</button>
             <div class="list-container" id="listPress"></div>
             
             <div id="adder_press" class="step-adder">
@@ -167,9 +168,10 @@
                 <button class="secondary" style="margin-left:auto;" id="btnAddStep_press">Add</button>
                 <button class="danger hidden" id="btnCancelEdit_press">X</button>
             </div>
-
+            
             <!-- RELEASE SEQUENCE -->
             <div class="row"><h4 style="margin:0;">Sequence B (Release)</h4></div>
+            <button id="btnRecordMacroRelease" style="background:#6f42c1;  margin:5px 0 10px 0; width:100%;">🔴 Record Combo for Sequence B</button>
             <div class="list-container" id="listRelease"></div>
             
             <div id="adder_release" class="step-adder">
@@ -197,7 +199,10 @@
             </div>
         </div>
 
-        <button id="btnSaveConfig" style="margin-top:20px;">Save Configuration</button>
+        <div style="margin-top:20px; display:flex; gap:10px;">
+            <button id="btnSaveConfig" style="flex:2;">Save Configuration</button>
+            <button id="btnBack" class="secondary" style="flex:1;">Cancel</button>
+        </div>
     </div>
 
     <!-- Add Switch Modal -->
@@ -347,24 +352,10 @@
             currentEditId = id;
             const sw = activeSwitches.find(s => s.id === id);
             
-            // Decode Switch Config
-            config.mode = sw.mode;
-            document.getElementById('displayPin').textContent = sw.pin;
-            document.getElementById('configTitle').textContent = `Configure Switch ${id}`;
-            document.getElementById('configName').value = sw.name || "";
+            // Explicitly Request Details from Device to ensure fresh state
+            sendCommand(`GET:${id}`);
             
-            // Wait, we need to parse payloads
-            // The switch object might just have the raw string? 
-            // The protocol reader should have parsed it enough?
-            // Actually, let's store Raw Strings in activeSwitches for ease, and parse them now.
-            
-            // Assume activeSwitches elements have .p1 and .p2 string props
-            if (config.mode === 0) {
-                config.momentaryKeys = sw.p1 ? sw.p1.split(',').filter(x=>x).map(Number) : [];
-            } else {
-                config.macroPress = parseMacroString(sw.p1);
-                config.macroRelease = parseMacroString(sw.p2);
-            }
+            loadConfigToEditor(sw);
             
             document.getElementById('dashboardPanel').classList.add('hidden');
             document.getElementById('configPanel').classList.remove('hidden');
@@ -445,6 +436,10 @@
             sw.name = name;
             
             showStatus('Saved!', 'success');
+
+            document.getElementById('configPanel').classList.add('hidden');
+            renderDashboard();
+
         });
 
 
@@ -500,10 +495,20 @@
             characteristic.addEventListener('characteristicvaluechanged', (e) => {
                  const str = new TextDecoder().decode(e.target.value);
                  console.log("Notify:", str);
-                 // If allow echo configuration from device:
-                 if(str.startsWith("ADD") || str.startsWith("CFG") || str.startsWith("CLR")) {
-                     // Could trigger re-read
-                     setTimeout(readDeviceConfig, 200);
+                 
+                 if (str.startsWith("COUNT")) {
+                     // New Firmware sends full config state on change
+                     parseConfigString(str);
+                 }
+                 else if (str.startsWith("CFG:")) {
+                     // Response from GET:ID
+                     // CFG:ID:PIN:MODE#P1#P2#NAME
+                     parseSpecificConfig(str);
+                 }
+                 else if(str.startsWith("ADD") || str.startsWith("CLR")) {
+                     // Echo from old firmware or just acknowledgment.
+                     // Do NOT trigger readDeviceConfig which causes loops if the value is the echo.
+                     console.log("Command Ack:", str);
                  }
             });
 
@@ -589,6 +594,25 @@
         function parseConfigString(str) {
             // "COUNT:2;SW:0:23;SW:1:18;"
             console.log("Parsed:", str);
+            
+            // Handle if we accidentally got a specific CFG string instead of the list
+            if (str.startsWith("CFG:")) {
+                parseSpecificConfig(str);
+                // If we don't have a list yet, we might need to fabricate one or request a refresh?
+                // But for now, let's just render what we have
+                if (activeSwitches.length === 0) {
+                     // We received a specific config but have no list. 
+                     // This shouldn't happen on initial connect if firmware sends COUNT string.
+                     // But if it does, let's just show this one switch.
+                     const id = parseInt(str.split(':')[1]);
+                     const pin = parseInt(str.split(':')[2]);
+                     activeSwitches.push({id, pin, mode:0, p1:"", p2:"", name:""});
+                     parseSpecificConfig(str); // Update details
+                     renderDashboard();
+                }
+                return;
+            }
+
             const items = str.split(';').filter(x=>x);
             const countPart = items.find(x=>x.startsWith('COUNT'));
             if(!countPart) return;
@@ -605,12 +629,173 @@
                     let name = "";
                     if(parts.length > 3) name = parts.slice(3).join(':');
                     
-                    newSwitches.push({ id, pin, mode:0, p1:"", p2:"", name });
+                    // Preserve payloads/mode if we already have this switch loaded
+                    // because the simple config string doesn't include them.
+                    let mode = 0;
+                    let p1 = "";
+                    let p2 = "";
+                    
+                    const existing = activeSwitches.find(s => s.id === id);
+                    if (existing) {
+                        mode = existing.mode;
+                        p1 = existing.p1;
+                        p2 = existing.p2;
+                    }
+
+                    newSwitches.push({ id, pin, mode, p1, p2, name });
                 }
             });
             
             activeSwitches = newSwitches;
             renderDashboard();
+        }
+                    
+        function parseSpecificConfig(str) {
+            // CFG:ID:PIN:MODE#P1#P2#NAME
+            console.log("Parsing specific config: " + str);
+            const firstColon = 3; // CFG
+            const secondColon = str.indexOf(':', firstColon + 1);
+            const thirdColon = str.indexOf(':', secondColon + 1);
+            
+            if(secondColon > 0 && thirdColon > 0) {
+                const id = parseInt(str.substring(firstColon + 1, secondColon));
+                const pin = parseInt(str.substring(secondColon + 1, thirdColon));
+                const rest = str.substring(thirdColon + 1); // MODE#P1...
+
+                // Wait! The Firmware sends "Mode" separated by COLON too? No...
+                // Firmware: "CFG:" + ID + ":" + PIN + ":" + MODE + "#" + ...
+                // So there is a FOURTH colon before the first Hash!
+                
+                // Let's re-examine firmware:
+                // String resp = "CFG:" + String(id) + ":" + String(s->getPin()) + ":" + String(s->getMode()) + "#" ...
+                
+                // So: CFG : ID : PIN : MODE # P1 # P2 # NAME
+                // Colons at: 3, after ID, after PIN, after MODE.
+                
+                // My JS only found 3 colons.
+                // firstColon = 3
+                // secondColon -> after ID
+                // thirdColon -> after PIN
+                
+                // rest = substring(thirdColon+1) -> "MODE#P1#P2#NAME" (if mode was after colon?)
+                
+                // WAIT. If firmware sends: PIN:MODE#...
+                // Then there is a COLON between PIN and MODE.
+                
+                // So `rest` starts with `MODE`.
+                // BUT `rest` includes the COLON before MODE?
+                // No, substring(thirdColon+1) skips the colon after PIN.
+                
+                // So `rest` starts with message AFTER PIN.
+                // which is `MODE#P1...` ?
+                
+                // Firmware: ... + ":" + String(s->getPin()) + ":" + String(s->getMode()) + "#" ...
+                // So after PIN, there is a `:` then MODE then `#`.
+                
+                // So `rest` (after PIN colon) is `MODE#P1...`?
+                // NO! `rest` is `MODE` (characters) then `#`?
+                
+                // Example: CFG:0:23:0#...
+                // 3rd colon is after 23.
+                // So substring starts at `0`.
+                // So `rest` is `0#...`
+                
+                // BUT wait. `0` IS the mode!
+                // And it is followed by `#`.
+                
+                // So `rest` = `0#P1...`
+                // parts = rest.split('#')
+                // parts[0] = `0` (The Mode).
+                // parts[1] = `P1`.
+                
+                // This logic actually seems CORRECT for `CFG:ID:PIN:MODE#...` format?
+                // WAIT.
+                // Firmware: ... + ":" + Pin + ":" + Mode + "#" ...
+                // There is a colon between Pin and Mode.
+                
+                // My JS:
+                // firstColon (after CFG)
+                // secondColon (after ID)
+                // thirdColon (after PIN)
+                
+                // `str.substring(secondColon+1, thirdColon)` extracts the PIN.
+                // `str.substring(thirdColon+1)` extracts everything AFTER the colon following PIN.
+                
+                // String: CFG:0:23:0#...
+                // Colons indices: 3, 5, 8.
+                // substring(6, 8) -> "23". Correct.
+                // substring(9) -> "0#...". Correct.
+                
+                // So `rest` is "0#...".
+                // split('#') -> ["0", "..."]
+                // mode = parseInt("0") -> 0. Correct.
+                
+                /*
+                   Debug user log:
+                   Parsed: CFG:0:23:0#128,97##SelectAll_
+                   rest would be "0#128,97##SelectAll_"
+                   parts[0] = "0"
+                   parts[1] = "128,97"
+                   parts[2] = ""
+                   parts[3] = "SelectAll_" (or similar)
+                */
+                
+                const parts = rest.split('#');
+                if (parts.length < 2) { 
+                     // Fallback if format is different? 
+                     // Maybe it's "CFG:ID:PIN:MODE#..." vs "CFG:ID:PIN:MODE" ?
+                     console.log("Parsing error, unexpected parts", parts);
+                     return;
+                }
+                
+                const mode = parseInt(parts[0]);
+                const p1 = parts[1] || "";
+                const p2 = parts[2] || "";
+                const name = parts[3] || "";
+                
+                // Update activeSwitches
+                const sw = activeSwitches.find(s => s.id === id);
+                if(sw) {
+                    sw.mode = mode;
+                    sw.p1 = p1;
+                    sw.p2 = p2;
+                    sw.name = name;
+                    
+                    console.log(`Updated Switch ${id}: Mode=${mode}, P1=${p1}`);
+
+                    // If we are currently editing this switch, refresh the UI
+                    // Note: Check types (string vs int) for ID
+                    if (currentEditId == id && !document.getElementById('configPanel').classList.contains('hidden')) {
+                        console.log("Refreshing Editor UI");
+                        loadConfigToEditor(sw);
+                        refreshUI();
+                    }
+                }
+            }
+        }
+        
+        function loadConfigToEditor(sw) {
+            // Reset config state fully
+            config = {
+                mode: sw.mode,
+                momentaryKeys: [],
+                macroPress: [],
+                macroRelease: []
+            };
+            
+            document.getElementById('displayPin').textContent = sw.pin;
+            document.getElementById('configTitle').textContent = `Configure Switch ${sw.id}`;
+            document.getElementById('configName').value = sw.name || "";
+            
+            console.log(`Loading Editor for Switch ${sw.id}, Mode: ${sw.mode}, P1: "${sw.p1}"`);
+
+            if (config.mode === 0) {
+                config.momentaryKeys = sw.p1 ? sw.p1.split(',').filter(x=>x).map(Number) : [];
+            } else {
+                config.macroPress = parseMacroString(sw.p1);
+                config.macroRelease = parseMacroString(sw.p2);
+                console.log("Parsed Macro P1:", config.macroPress);
+            }
         }
 
         function onDisconnect() {
@@ -658,9 +843,17 @@
         function stepsToStr(steps) { return steps.map(s => `${s.action},${s.val}`).join(','); }
         function parseMacroString(str) {
             if(!str) return [];
-            const arr = str.split(',').map(Number);
+            // Handle trailing commas or extra spaces
+            const raw = str.split(',').map(s => s.trim()).filter(s => s !== '');
+            const arr = raw.map(Number);
             const res = [];
-            for(let i=0; i<arr.length; i+=2) res.push({ action: arr[i], val: arr[i+1] });
+            // Step size is 2: Action, Value
+            for(let i=0; i<arr.length - 1; i+=2) {
+                res.push({ action: arr[i], val: arr[i+1] });
+            }
+            if (arr.length % 2 !== 0) {
+                console.warn("Odd number of items in macro string, possible truncation:", str);
+            }
             return res;
         }
         
@@ -675,7 +868,14 @@
         });
 
         let isRecording = false;
+        let isRecordingMacro = false;
+        let recordingTarget = null; // 'press' or 'release'
+        let lastEventTime = 0;
+        
         const btnRecord = document.getElementById('btnRecordCombo');
+        const btnRecordMacroA = document.getElementById('btnRecordMacroPress');
+        const btnRecordMacroB = document.getElementById('btnRecordMacroRelease');
+        
         const recordHandler = (e) => {
             e.preventDefault();
             let val = KEY_MAP[e.key] || (e.key.length==1?e.key.charCodeAt(0):null);
@@ -686,6 +886,80 @@
                  }
             }
         };
+
+        function toggleMacroRecord(target) {
+            const btn = target === 'press' ? btnRecordMacroA : btnRecordMacroB;
+            const targetName = target === 'press' ? 'Sequence A' : 'Sequence B';
+            
+            if(isRecordingMacro) {
+                 // Stop logic...
+                 window.removeEventListener('keydown', macroRecordHandler);
+                 window.removeEventListener('keyup', macroRecordUpHandler);
+                 
+                 btnRecordMacroA.textContent = "🔴 Record Combo for Sequence A";
+                 btnRecordMacroA.style.background = "#6f42c1";
+                 btnRecordMacroB.textContent = "🔴 Record Combo for Sequence B";
+                 btnRecordMacroB.style.background = "#6f42c1";
+                 
+                 isRecordingMacro = false;
+                 recordingTarget = null;
+                 
+            } else {
+                 if(confirm(`Clear existing steps for ${targetName}?`)) {
+                     if(target === 'press') config.macroPress = [];
+                     else config.macroRelease = [];
+                 }
+                 
+                 refreshUI();
+                 // Start clean
+                 lastEventTime = 0; // Means "first key is time 0" (no delay before first key)
+                 recordingTarget = target;
+                 window.addEventListener('keydown', macroRecordHandler);
+                 window.addEventListener('keyup', macroRecordUpHandler);
+                 
+                 btn.textContent = "⏹ Stop Recording";
+                 btn.style.background = "#dc3545";
+                 isRecordingMacro = true;
+            }
+        }
+        
+        function macroRecordEvent(isUp, e) {
+             if(e.repeat) return;
+             // DO NOT preventDefault if it's the Stop button click? 
+             // But these are key events. We must prevent default to avoid browser shortcuts (Ctrl+S etc)
+             e.preventDefault();
+             
+             const list = recordingTarget === 'press' ? config.macroPress : config.macroRelease;
+             if(!list) return; // safety
+             
+             // Check Key Validity
+             let val = KEY_MAP[e.key] || (e.key.length==1 ? e.key.charCodeAt(0) : null);
+             if(!val) return;
+
+             // Calculate Delay
+             const now = Date.now();
+             // If this is not the very first event...
+             if (lastEventTime > 0) {
+                 const delta = now - lastEventTime;
+                 // Threshold: 20ms to avoid cluttering with tiny delays but capture human timing
+                 if (delta > 20) {
+                     list.push({ action: 2, val: delta });
+                 }
+             }
+             lastEventTime = now;
+             
+             // Add Action
+             list.push({ action: isUp ? 4 : 3, val: val }); // 4=REL, 3=PRESS
+             refreshUI();
+             
+             // Scroll to bottom
+             const containerId = recordingTarget === 'press' ? 'listPress' : 'listRelease';
+             const container = document.getElementById(containerId);
+             if(container) container.scrollTop = container.scrollHeight;
+        }
+
+        const macroRecordHandler = (e) => macroRecordEvent(false, e);
+        const macroRecordUpHandler = (e) => macroRecordEvent(true, e);
 
         btnRecord.addEventListener('click', () => {
              if(isRecording) {
@@ -704,6 +978,9 @@
                  isRecording = true;
              }
         });
+        
+        btnRecordMacroA.addEventListener('click', () => toggleMacroRecord('press'));
+        btnRecordMacroB.addEventListener('click', () => toggleMacroRecord('release'));
 
         // Setup Adders
         ['press', 'release'].forEach(t => {
@@ -731,7 +1008,7 @@
             });
             
             // Detect
-            container = document.getElementById(`adder_${t}`);
+            const container = document.getElementById(`adder_${t}`);
             container.querySelector('.btn-detect').addEventListener('click', (e) => {
                  e.target.textContent = "⌨️";
                  const h = (evt) => {

@@ -95,6 +95,19 @@ private:
             Serial.printf("Added Switch %d on Pin %d\n", newIdx, pin);
         }
     } 
+    else if (data.startsWith("GET:")) {
+        int id = data.substring(4).toInt();
+        if(id >= 0 && id < switches.size()) {
+            Switch* s = switches[id];
+            // Format: CFG:ID:PIN:MODE#P1#P2#NAME
+            // We reuse the CFG format so the client can parse it easily
+            String resp = "CFG:" + String(id) + ":" + String(s->getPin()) + ":" + String(s->getMode()) + "#" + s->getP1() + "#" + s->getP2() + "#" + s->getName();
+            configCharacteristic->setValue(resp.c_str());
+            configCharacteristic->notify();
+        }
+        preferences.end();
+        return;
+    }
     else if (data.startsWith("del:")) {
         // Implementing simple clear for now as full delete requires shifting indices
         Serial.println("Delete not fully impl, use clr");
@@ -170,7 +183,11 @@ private:
     preferences.end();
     
     // Notify client of echo?
-    configCharacteristic->setValue(value);
+    // configCharacteristic->setValue(value);
+    
+    // Better: Notify of new config state
+    String cfg = getConfigString();
+    configCharacteristic->setValue(cfg.c_str());
     configCharacteristic->notify();
   }
 
@@ -269,7 +286,8 @@ protected:
     configCharacteristic->addDescriptor(new BLE2902());
     
     // Set Initial Value
-    configCharacteristic->setValue(getConfigString().c_str());
+    String initialCfg = getConfigString();
+    configCharacteristic->setValue(initialCfg.c_str());
     
     configCharacteristic->setCallbacks(new ConfigCallback(this));
     configService->start();
