@@ -547,48 +547,19 @@
         }
         
         async function readDeviceConfig() {
-            // Format from device: "COUNT:N;SW:0:PIN:MODE;SW:1:..."
-            // But wait, the device code `getConfigString` only returns meta: "SW:ID:PIN"
-            // It does NOT return the full payloads (too long for one packet usually).
-            // We need to load payloads on demand or change protocol to support chunking?
-            // Current `ConfigKeyboard.h`:
-            // `getConfigString` -> "COUNT:N;SW:0:PIN;..." (My implementation: "SW:i:PIN")
-            
-            // Wait, I implemented:
-            // "SW:" + String(i) + ":" + String(switches[i]->getPin()) + ";"
-            // It does not include payloads.
-            // So on Dashboard load, we only know ID and PIN.
-            // When we "Configure", we need to fetch the payloads for that switch!
-            // BUT: There is no "READ_SWITCH_I" command implemented in Firmware yet.
-            
-            // CRITICAL MISSING PIECE: Firmware needs to support fetching details.
-            // OR: We include the details in the `getConfigString` if it fits.
-            // Max MTU is small (20 bytes default, maybe 512 extended).
-            // With multiple switches and macros, it won't fit in one Read.
-            
-            // Quick Fix for MVP:
-            // Assuming we just added it, we know defaults.
-            // If we are editing, we MUST read.
-            // I should update Firmware to support `GET:INDEX`?
-            // Or just assume for now we only support 'write-only' or single packet configs?
-            // "NVS Persistent" means it's saved. But the UI needs to see it.
-            
-            // LIMITATION: UI Cannot read back Macros for existing switches with current firmware implementation.
-            // I should fix Firmware to return full config via Notify when requested?
-            // Or keep it simple: "Write Only" UI for now?
-            // No, user expects to see their keys.
-            
-            // Let's implement activeSwitches simply based on initial read.
-            // Since I cannot change firmware easily without another step, 
-            // I will implement the UI to respect what IS returned.
-            // If `configString` is just pins, we show pins.
-            // When opening editor, if we don't have data, we show empty/default.
-            // This is "Blind Edit". Acceptable for MVP? 
-            // "Blind Edit" = You overwrite whatever was there.
-            
-            const val = await characteristic.readValue();
-            const str = new TextDecoder().decode(val);
-            parseConfigString(str);
+            try {
+                const val = await characteristic.readValue();
+                const str = new TextDecoder().decode(val);
+                console.log("Read Config:", str);
+                if (!str) {
+                    console.warn("Empty config read from device");
+                }
+                parseConfigString(str);
+            } catch (e) {
+                console.error("Error reading config:", e);
+                // Try to render dashboard anyway if specific read failed? 
+                // No, we need data.
+            }
         }
         
         function parseConfigString(str) {
@@ -598,24 +569,17 @@
             // Handle if we accidentally got a specific CFG string instead of the list
             if (str.startsWith("CFG:")) {
                 parseSpecificConfig(str);
-                // If we don't have a list yet, we might need to fabricate one or request a refresh?
-                // But for now, let's just render what we have
-                if (activeSwitches.length === 0) {
-                     // We received a specific config but have no list. 
-                     // This shouldn't happen on initial connect if firmware sends COUNT string.
-                     // But if it does, let's just show this one switch.
-                     const id = parseInt(str.split(':')[1]);
-                     const pin = parseInt(str.split(':')[2]);
-                     activeSwitches.push({id, pin, mode:0, p1:"", p2:"", name:""});
-                     parseSpecificConfig(str); // Update details
-                     renderDashboard();
-                }
+                // If we don't have a list yet, we try to render anyway if we have switches
+                if (activeSwitches.length > 0) renderDashboard();
                 return;
             }
 
             const items = str.split(';').filter(x=>x);
             const countPart = items.find(x=>x.startsWith('COUNT'));
-            if(!countPart) return;
+            if(!countPart) {
+                console.log("Config string missing COUNT, skipping parse", str);
+                return;
+            }
             
             // Rebuild activeSwitches
             const newSwitches = [];
@@ -754,22 +718,27 @@
                 const name = parts[3] || "";
                 
                 // Update activeSwitches
-                const sw = activeSwitches.find(s => s.id === id);
-                if(sw) {
+                let sw = activeSwitches.find(s => s.id === id);
+                if(!sw) {
+                     // Auto-create if not exists (handling startup case where we got CFG instead of LIST)
+                     console.log(`Auto-adding Switch ${id} from CFG data`);
+                     sw = { id, pin, mode, p1, p2, name };
+                     activeSwitches.push(sw);
+                     renderDashboard();
+                } else {
                     sw.mode = mode;
                     sw.p1 = p1;
                     sw.p2 = p2;
                     sw.name = name;
                     
                     console.log(`Updated Switch ${id}: Mode=${mode}, P1=${p1}`);
+                }
 
-                    // If we are currently editing this switch, refresh the UI
-                    // Note: Check types (string vs int) for ID
-                    if (currentEditId == id && !document.getElementById('configPanel').classList.contains('hidden')) {
-                        console.log("Refreshing Editor UI");
-                        loadConfigToEditor(sw);
-                        refreshUI();
-                    }
+                // If we are currently editing this switch, refresh the UI
+                if (currentEditId == id && !document.getElementById('configPanel').classList.contains('hidden')) {
+                    console.log("Refreshing Editor UI");
+                    loadConfigToEditor(sw);
+                    refreshUI();
                 }
             }
         }
@@ -806,7 +775,11 @@
             document.getElementById('btnConnect').classList.remove('hidden');
             document.getElementById('btnDisconnect').classList.add('hidden');
             document.getElementById('batteryLevel').classList.add('hidden');
+            
+            // Clear state
+            activeSwitches = [];
             device = null;
+            characteristic = null;
         }
 
         // --- Helper Logic (Key Maps, etc) ---
